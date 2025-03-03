@@ -99,7 +99,7 @@ class BaselineAgent(ArtificialBrain):
         self._process_messages(state, self._team_members, self._condition)
         # Initialize and update trust beliefs for team members
         trustBeliefs = self._loadBelief(self._team_members, self._folder)
-        self._trustBelief(self._team_members, trustBeliefs, self._folder, self._received_messages)
+        self._trustBelief(self._team_members, trustBeliefs, self._folder, self._received_messages, state)
 
         # Check whether human is close in distance
         if state[{'is_human_agent': True}]:
@@ -904,49 +904,101 @@ class BaselineAgent(ArtificialBrain):
                                                    '14']:
                 self._human_loc = int(mssgs[-1].split()[-1])
 
+        # Print all received messages for debugging
+        print("\n---- Received Messages ----")
+        for mssg in self.received_messages:
+            print(f"From: {mssg.from_id} | Content: {mssg.content}")  # Debugging
+
+            for member in teamMembers:
+                if mssg.from_id == member:
+                    receivedMessages[member].append(mssg.content)
+
+        print("\n----------------------------\n")  # End of debug print
+
     def _loadBelief(self, members, folder):
-        """
-        Loads trust belief values if the agent already collaborated with a human before,
-        otherwise, trust belief values are initialized using default values.
-        """
-        trustBeliefs = {member: {'competence': 0.5, 'willingness': 0.5} for member in members}  # Default values
-
-        try:
-            with open(folder + '/beliefs/allTrustBeliefs.csv', 'r') as csvfile:
-                reader = csv.reader(csvfile, delimiter=';', quotechar="'")
-                next(reader)  # Skip header row
-
-                for row in reader:
-                    if len(row) < 3:
-                        continue  # Skip invalid rows
-
-                    name, competence, willingness = row
-                    competence = float(competence)
-                    willingness = float(willingness)
-
-                    # If the name is in the members list, update trust values
-                    if name in trustBeliefs:
-                        trustBeliefs[name]['competence'] = competence
-                        trustBeliefs[name]['willingness'] = willingness
-
-        except FileNotFoundError:
-            pass  # If file is missing, return default trust values
-
+        '''
+        Loads trust belief values if agent already collaborated with human before, otherwise trust belief values are initialized using default values.
+        '''
+        # Create a dictionary with trust values for all team members
+        trustBeliefs = {}
+        # Set a default starting trust value
+        default = 0.5
+        trustfile_header = []
+        trustfile_contents = []
+        # Check if agent already collaborated with this human before, if yes: load the corresponding trust values, if no: initialize using default trust values
+        with open(folder + '/beliefs/allTrustBeliefs.csv') as csvfile:
+            reader = csv.reader(csvfile, delimiter=';', quotechar="'")
+            for row in reader:
+                if trustfile_header == []:
+                    trustfile_header = row
+                    continue
+                # Retrieve trust values
+                if row and row[0] == self._human_name:
+                    name = row[0]
+                    competence = float(row[1])
+                    willingness = float(row[2])
+                    trustBeliefs[name] = {'competence': competence, 'willingness': willingness}
+                # Initialize default trust values
+                if row and row[0] != self._human_name:
+                    competence = default
+                    willingness = default
+                    trustBeliefs[self._human_name] = {'competence': competence, 'willingness': willingness}
         return trustBeliefs
 
-    def _trustBelief(self, members, trustBeliefs, folder, receivedMessages):
+    def _trustBelief(self, members, trustBeliefs, folder, receivedMessages, state):
+        # Constants from the Table
+        X = 0.15  # High impact
+        Y = 0.10  # Medium impact
+        Z = 0.05  # Low impact
+
         '''
         Baseline implementation of a trust belief. Creates a dictionary with trust belief scores for each team member, for example based on the received messages.
         '''
         # Update the trust value based on for example the received messages
         for message in receivedMessages:
-            # Increase agent trust in a team member that rescued a victim
-            if 'Collect' in message:
-                trustBeliefs[self._human_name]['competence'] += 0.10
-                # Restrict the competence belief to a range of -1 to 1
-                trustBeliefs[self._human_name]['competence'] = np.clip(trustBeliefs[self._human_name]['competence'], -1,
-                                                                       1)
-        # Save current trust belief values so we can later use and retrieve them to add to a csv file with all the logged trust belief values
+            words = message.split()
+
+            # 🛑 Detecting Lies: "Search: Room X" but agent never searched it
+            if message.startswith("Search:"):
+                room = ' '.join(words[1:])
+                if room not in self._searched_rooms:
+                    print(f"⚠️ Lie detected! Agent claimed to search {room} but didn't.")
+                    trustBeliefs[self._human_name]['willingness'] -= 0.1  # Reduce willingness
+
+            # 🛑 Detecting Lies: "Found: Victim X" but victim doesn't exist
+            elif message.startswith("Found:"):
+                victim = ' '.join(words[1:-2])  # Extract victim name
+                room = words[-1]  # Extract room number
+                victim_exists = any(
+                    info['class_inheritance'] == 'CollectableBlock' and info['img_name'][8:-4] == victim
+                    for info in state.values()
+                )
+                if not victim_exists:
+                    print(f"⚠️ Lie detected! Agent claimed to find {victim} in {room}, but it's not there.")
+                    trustBeliefs[self._human_name]['willingness'] -= 0.2  # Stronger penalty for lying
+
+            # 🛑 Detecting Lies: "Removed: Obstacle X" but it's still there
+            elif message.startswith("Removed:"):
+                obstacle = ' '.join(words[1:-2])
+                room = words[-1]
+                obstacle_exists = any(
+                    'ObstacleObject' in info.get('class_inheritance', []) and info['obj_id'] == obstacle
+                    for info in state.values()
+                )
+                if obstacle_exists:
+                    print(f"⚠️ Lie detected! Agent claimed to remove {obstacle} in {room}, but it's still there.")
+                    trustBeliefs[self._human_name]['willingness'] -= 0.3  # Strongest penalty for lying
+
+            # ✅ Honest Actions Increase Trust
+            elif message.startswith("Collect:") or message.startswith("Rescue:"):
+                trustBeliefs[self._human_name]['competence'] += 0.1
+                trustBeliefs[self._human_name]['willingness'] += 0.1
+
+            # Ensure trust stays within [-1, 1] range
+        trustBeliefs[self._human_name]['competence'] = np.clip(trustBeliefs[self._human_name]['competence'], -1, 1)
+        trustBeliefs[self._human_name]['willingness'] = np.clip(trustBeliefs[self._human_name]['willingness'], -1, 1)
+
+        # ✅ Save updated beliefs back to CSV
         with open(folder + '/beliefs/currentTrustBelief.csv', mode='w') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
             csv_writer.writerow(['name', 'competence', 'willingness'])

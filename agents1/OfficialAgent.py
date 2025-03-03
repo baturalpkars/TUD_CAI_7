@@ -73,6 +73,7 @@ class BaselineAgent(ArtificialBrain):
         self._recent_vic = None
         self._received_messages = []
         self._moving = False
+        self._last_print_time = time.time()
 
     def initialize(self):
         # Initialization of the state tracker and navigation algorithm
@@ -905,15 +906,36 @@ class BaselineAgent(ArtificialBrain):
                 self._human_loc = int(mssgs[-1].split()[-1])
 
         # Print all received messages for debugging
-        print("\n---- Received Messages ----")
-        for mssg in self.received_messages:
-            print(f"From: {mssg.from_id} | Content: {mssg.content}")  # Debugging
+        # Debugging: Print all received messages and key attributes
+        current_time = time.time()
+        if current_time - self._last_print_time >= 10:
+            self._last_print_time = current_time  # Update last print time
 
-            for member in teamMembers:
-                if mssg.from_id == member:
-                    receivedMessages[member].append(mssg.content)
+            # Debugging: Print all received messages and key attributes
+            print("\n------ DEBUG INFO ------")
+            print(f"Timestamp: {time.strftime('%H:%M:%S')}")
+            print(f"Phase: {self._phase}")
+            print(f"Agent Location: {state[self.agent_id]['location']}")
+            print(f"Current Searched Rooms: {self._searched_rooms}")
+            print(
+                f"Unsearched Rooms: {[room['room_name'] for room in state.values() if 'room_name' in room and room['room_name'] not in self._searched_rooms]}")
+            print(f"Found Victims: {self._found_victims}")
 
-        print("\n----------------------------\n")  # End of debug print
+            # Print received messages
+            for mssg in self.received_messages:
+                if mssg.from_id == 'HumanAgent':
+                    print("\n---- Received Messages ----")
+                    print(f"From: {mssg.from_id} | Content: {mssg.content}")
+                    print("\n--------------------------")
+
+            # Print all objects detected in the state (limit to 10 for readability)
+            print("\nDetected Objects (Limited to 10):")
+            for i, (obj_id, obj_info) in enumerate(state.items()):
+                if i >= 10:
+                    break
+                print(f"{obj_id}: {obj_info}")
+
+            print("\n----------------------------\n")  # End of debug print
 
     def _loadBelief(self, members, folder):
         '''
@@ -960,7 +982,9 @@ class BaselineAgent(ArtificialBrain):
 
             # 🛑 Detecting Lies: "Search: Room X" but agent never searched it
             if message.startswith("Search:"):
-                room = ' '.join(words[1:])
+                roomNo = ' '.join(words[1:])
+                room = 'area ' + roomNo
+                print(room)
                 if room not in self._searched_rooms:
                     print(f"⚠️ Lie detected! Agent claimed to search {room} but didn't.")
                     trustBeliefs[self._human_name]['willingness'] -= 0.1  # Reduce willingness

@@ -905,33 +905,33 @@ class BaselineAgent(ArtificialBrain):
                 self._human_loc = int(mssgs[-1].split()[-1])
 
     def _loadBelief(self, members, folder):
-        '''
-        Loads trust belief values if agent already collaborated with human before, otherwise trust belief values are initialized using default values.
-        '''
-        # Create a dictionary with trust values for all team members
-        trustBeliefs = {}
-        # Set a default starting trust value
-        default = 0.5
-        trustfile_header = []
-        trustfile_contents = []
-        # Check if agent already collaborated with this human before, if yes: load the corresponding trust values, if no: initialize using default trust values
-        with open(folder + '/beliefs/allTrustBeliefs.csv') as csvfile:
-            reader = csv.reader(csvfile, delimiter=';', quotechar="'")
-            for row in reader:
-                if trustfile_header == []:
-                    trustfile_header = row
-                    continue
-                # Retrieve trust values 
-                if row and row[0] == self._human_name:
-                    name = row[0]
-                    competence = float(row[1])
-                    willingness = float(row[2])
-                    trustBeliefs[name] = {'competence': competence, 'willingness': willingness}
-                # Initialize default trust values
-                if row and row[0] != self._human_name:
-                    competence = default
-                    willingness = default
-                    trustBeliefs[self._human_name] = {'competence': competence, 'willingness': willingness}
+        """
+        Loads trust belief values if the agent already collaborated with a human before,
+        otherwise, trust belief values are initialized using default values.
+        """
+        trustBeliefs = {member: {'competence': 0.5, 'willingness': 0.5} for member in members}  # Default values
+
+        try:
+            with open(folder + '/beliefs/allTrustBeliefs.csv', 'r') as csvfile:
+                reader = csv.reader(csvfile, delimiter=';', quotechar="'")
+                next(reader)  # Skip header row
+
+                for row in reader:
+                    if len(row) < 3:
+                        continue  # Skip invalid rows
+
+                    name, competence, willingness = row
+                    competence = float(competence)
+                    willingness = float(willingness)
+
+                    # If the name is in the members list, update trust values
+                    if name in trustBeliefs:
+                        trustBeliefs[name]['competence'] = competence
+                        trustBeliefs[name]['willingness'] = willingness
+
+        except FileNotFoundError:
+            pass  # If file is missing, return default trust values
+
         return trustBeliefs
 
     def _trustBelief(self, members, trustBeliefs, folder, receivedMessages):

@@ -84,6 +84,21 @@ class BaselineAgent(ArtificialBrain):
         # Filtering of the world state before deciding on an action 
         return state
 
+    def get_trust(self):
+        # classifies trust belief as high, mid, low
+        trust_values = self._loadBelief(self._team_members, self._folder)
+
+        name = self._human_name
+        C = trust_values[name]['competence']
+        W = trust_values[name]['willingness']
+
+        if 0 <= C < -0.33 and 0 <= W < -0.33:
+            return "low"
+        if -0.33 <= C <= 0.33 and -0.33 <= W <= 0.33:
+            return "mid"
+        if 0.33 <= C <= 1 and 0.33 <= W <= 1:
+            return "high"
+
     def decide_on_actions(self, state):
         # Identify team members
         agent_name = state[self.agent_id]['obj_id']
@@ -129,7 +144,7 @@ class BaselineAgent(ArtificialBrain):
                 info['is_carrying']) > 0 and 'mild' in info['is_carrying'][0][
                 'obj_id'] and self._rescue == 'together' and not self._moving:
                 # If victim is being carried, add to collected victims memory
-                if info['is_carrying'][0]['img_name'][8:-4] not in self._collected_victims:
+                if info['is_carrying'][0]['img_name'][8-4] not in self._collected_victims:
                     self._collected_victims.append(info['is_carrying'][0]['img_name'][8:-4])
                 self._carrying_together = True
             if 'is_human_agent' in info and self._human_name in info['name'] and len(info['is_carrying']) == 0:

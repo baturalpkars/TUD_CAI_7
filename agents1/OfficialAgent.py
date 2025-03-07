@@ -1023,90 +1023,93 @@ class BaselineAgent(ArtificialBrain):
         for message in receivedMessages:
             # Remember intentions to execute a search/collect/remove actions
             trust_type = message.split(":")[0]
-            if any(trust_type in trusting_type
-                   for trusting_type in ["Search", "Found", "Collect"]):
+            try:
+                target_area = int(message.split()[-1])
+            except ValueError:
+                # Skip messages that do not conform to the expected format
+                continue
 
-                # Save the trust intention in the history
+            # For Search, Found, and Collect types, save the event and update beliefs accordingly
+            if trust_type in ["Search", "Found", "Collect"]:
+                # Save the trust event in the history
                 self._trust_history[trust_type].append(TrustEvent(
-                    trust_type,
+                    event_type=trust_type,
                     time=tick,
                     agent=self._human_name,
-                    target=int(message.split()[-1])
+                    target=target_area
                 ))
+                print(f"Logged {trust_type} event with target {target_area} at time {tick}.")
 
-                # print(f"Trust event: {trust_type} at time {tick} for area {int(message.split()[-1])}")
-
-                # Get the area of trust
-                area = int(message.split()[-1])
-
-                print(self._trust_history)
-                print('area:', area)
-
-                if 'Search' in message:
-                    print(f'Increased willingness for together event with {0.05}')
+                if trust_type == "Search":
+                    print(f"Increased willingness by 0.05 due to Search event.")
                     beliefs['willingness'] += 0.05
 
-                # Validate if the agent could've found the victim
-                if "Found" in message:
-                    if area in self._trust_history["Search"]:
-                        # Maybe willingness
+                elif trust_type == "Found":
+                    # Check if any Search event had a matching target:
+                    if any(event.target == target_area for event in self._trust_history["Search"]):
                         beliefs['competence'] += Z
-                        print(f'Increased competence for together event with {Z}')
-                    else:
-                        # Maybe willingness
-                        beliefs['competence'] -= Z
-                        print(f'Decreased competence for together event with {Z}')
-
-                # Increase agent trust in a team member that rescued a victim
-                if 'Collect' in message:
-                    if area in self._trust_history["Found"]:
-                        beliefs['competence'] += Z
-                        print(f'Increased competence for together event with {Z}')
+                        print(f"Increased competence by {Z} (Found event match).")
                     else:
                         beliefs['competence'] -= Z
-                        print(f'Decreased competence for together event with {Z}')
+                        print(f"Decreased competence by {Z} (Found event no match).")
 
-            # Log together intents
-            for trust in ['Remove together', 'Rescue together']:
-                if trust in message:
+                elif trust_type == "Collect":
+                    # Check if any Found event had a matching target:
+                    if any(event.target == target_area for event in self._trust_history["Found"]):
+                        beliefs['competence'] += Z
+                        print(f"Increased competence by {Z} (Collect event match).")
+                    else:
+                        beliefs['competence'] -= Z
+                        print(f"Decreased competence by {Z} (Collect event no match).")
+
+            # Log together intents (for both Remove together and Rescue together)
+            for together_intent in ['Remove together', 'Rescue together']:
+                if together_intent in message:
                     beliefs['willingness'] += Y
-                    print(f'Increased willingness for together event with {Y}')
-                    self._trust_history[trust].append(TrustEvent(
-                        trust,
+                    print(f"Increased willingness by {Y} for {together_intent} event.")
+                    self._trust_history[together_intent].append(TrustEvent(
+                        event_type=together_intent,
                         time=tick,
                         agent=self._human_name,
-                        target=self._recent_vic
+                        target=self._recent_vic  # assuming _recent_vic holds a relevant target (e.g., victim ID)
                     ))
 
             # Log alone events
-            for trust in ['Remove alone', 'Rescue alone']:
-                if trust in message:
-                    print(f'Decreased willingness for together event with {Y}')
+            for alone_intent in ['Remove alone', 'Rescue alone']:
+                if alone_intent in message:
                     beliefs['willingness'] -= Y
+                    print(f"Decreased willingness by {Y} for {alone_intent} event.")
 
-        # Log removal events
+        # Log removal events based on fulfillment time
         if self._remove:
-            for trust in self._trust_history['Remove together']:
-                if trust.achievedTime is None:
-                    trust.achievedTime = tick
-                    if tick - trust.achievedTime < 66:
+            for event in self._trust_history['Remove together']:
+                if event.achievedTime is None:
+                    # Set the achieved time and compute delta before updating
+                    event.achievedTime = tick
+                    time_delta = tick - event.time
+                    if time_delta < 66:
                         beliefs['competence'] += Z
+                        print(f"Increased competence by {Z} (fast removal).")
                     else:
                         beliefs['competence'] -= Z
+                        print(f"Decreased competence by {Z} (slow removal).")
 
-        # Log rescue events
+        # Log rescue events based on fulfillment time
         if self._rescue:
-            for trust in self._trust_history['Rescue together']:
-                if trust.achievedTime is None:
-                    trust.achievedTime = tick
-                    if tick - trust.achievedTime < 66:
-                        # High Impact
-                        beliefs['competence'] += X if (
-                                self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
+            for event in self._trust_history['Rescue together']:
+                if event.achievedTime is None:
+                    event.achievedTime = tick
+                    time_delta = tick - event.time
+                    if time_delta < 66:
+                        increment = X if (
+                                    self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
+                        beliefs['competence'] += increment
+                        print(f"Increased competence by {increment} (fast rescue).")
                     else:
-                        # High Impact
-                        beliefs['competence'] -= X if (
-                                self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
+                        decrement = X if (
+                                    self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
+                        beliefs['competence'] -= decrement
+                        print(f"Decreased competence by {decrement} (slow rescue).")
 
         # Restrict the beliefs to a range of -1 to 1
         beliefs['competence'] = np.clip(beliefs['competence'], -1, 1)

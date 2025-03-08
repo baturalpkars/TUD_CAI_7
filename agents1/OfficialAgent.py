@@ -413,17 +413,19 @@ class BaselineAgent(ArtificialBrain):
                                 \n clock - removal time: 5 seconds \n afstand - distance between us: ' + self._distance_human,
                                               'RescueBot')
                             self._waiting = True
-                            # Determine the next area to explore if the human tells the agent not to remove the obstacle
+                            # Determine the next area to explore if the human tells the agent not to remove the obstacle and human trustworthy
+                            ## Or if human untrustworthy
                         if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Continue' and not self._remove:
+                            -1] == 'Continue' and not self._remove and self.get_trust('Remove') or not self.get_trust('Remove'):
                             self._answered = True
                             self._waiting = False
                             # Add area to the to do list
                             self._to_search.append(self._door['room_name'])
                             self._phase = Phase.FIND_NEXT_GOAL
                         # Wait for the human to help removing the obstacle and remove the obstacle together
+                        ## Only if human trustworthy?
                         if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Remove' or self._remove:
+                            -1] == 'Remove' and self.get_trust('Remove') or self._remove:
                             if not self._remove:
                                 self._answered = True
                             # Tell the human to come over and be idle untill human arrives
@@ -436,9 +438,17 @@ class BaselineAgent(ArtificialBrain):
                                 self._send_message('Lets remove rock blocking ' + str(self._door['room_name']) + '!',
                                                   'RescueBot')
                                 return None, {}
-                        # Remain idle untill the human communicates what to do with the identified obstacle 
+                        # Remain idle untill the human communicates what to do with the identified obstacle
+                        ## If human untrustworthy, move on and determine the next area to explore
                         else:
-                            return None, {}
+                            if self.get_trust('Remove'):
+                                return None, {}
+                            else:
+                                self._answered = True
+                                self._waiting = False
+                                # Add area to the to do list
+                                self._to_search.append(self._door['room_name'])
+                                self._phase = Phase.FIND_NEXT_GOAL
 
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'tree' in info[
                         'obj_id']:
@@ -452,16 +462,18 @@ class BaselineAgent(ArtificialBrain):
                                 \n clock - removal time: 10 seconds', 'RescueBot')
                             self._waiting = True
                         # Determine the next area to explore if the human tells the agent not to remove the obstacle
+                        ## Only if human is trustworthy
                         if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Continue' and not self._remove:
+                            -1] == 'Continue' and not self._remove and self.get_trust('Remove'):
                             self._answered = True
                             self._waiting = False
                             # Add area to the to do list
                             self._to_search.append(self._door['room_name'])
                             self._phase = Phase.FIND_NEXT_GOAL
                         # Remove the obstacle if the human tells the agent to do so
+                        ## Or if human untrustworthy
                         if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Remove' or self._remove:
+                            -1] == 'Remove' or self._remove or not self.get_trust('Remove'):
                             if not self._remove:
                                 self._answered = True
                                 self._waiting = False
@@ -489,7 +501,8 @@ class BaselineAgent(ArtificialBrain):
                                 \n clock - removal time together: 3 seconds \n afstand - distance between us: ' + self._distance_human + '\n clock - removal time alone: 20 seconds',
                                               'RescueBot')
                             self._waiting = True
-                        # Determine the next area to explore if the human tells the agent not to remove the obstacle          
+                        # Determine the next area to explore if the human tells the agent not to remove the obstacle
+                        ## Follow what human says only if trustworthy
                         if self.received_messages_content and self.received_messages_content[
                             -1] == 'Continue' and not self._remove:
                             self._answered = True
@@ -497,9 +510,10 @@ class BaselineAgent(ArtificialBrain):
                             # Add area to the to do list
                             self._to_search.append(self._door['room_name'])
                             self._phase = Phase.FIND_NEXT_GOAL
-                        # Remove the obstacle alone if the human decides so
-                        if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Remove alone' and not self._remove:
+                        # Remove the obstacle alone if the human decides so and is trustworthy
+                        ## Or if human is not trustworthy
+                        if (self.received_messages_content and (self.received_messages_content[
+                            -1] == 'Remove alone' and self.get_trust("Remove")) and not self._remove) or not self.get_trust("Remove"):
                             self._answered = True
                             self._waiting = False
                             self._send_message('Removing stones blocking ' + str(self._door['room_name']) + '.',
@@ -508,8 +522,9 @@ class BaselineAgent(ArtificialBrain):
                             self._remove = False
                             return RemoveObject.__name__, {'object_id': info['obj_id']}
                         # Remove the obstacle together if the human decides so
+                        ## Only if human is trustworthy
                         if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Remove together' or self._remove:
+                            -1] == 'Remove together' and self.get_trust("Remove") or self._remove:
                             if not self._remove:
                                 self._answered = True
                             # Tell the human to come over and be idle untill human arrives
@@ -525,7 +540,18 @@ class BaselineAgent(ArtificialBrain):
                                 return None, {}
                         # Remain idle until the human communicates what to do with the identified obstacle
                         else:
-                            return None, {}
+                            ## If human trustworthy, remain idle until the human communicates what to do with the identified obstacle
+                            if self.get_trust("Remove"):
+                                return None, {}
+                            else:
+                                ## If human not trustworthy then simply remove alone
+                                self._waiting = False
+                                self._send_message('Human Untrustworthy - Removing stones blocking ' + str(self._door['room_name']) + '.',
+                                                   'RescueBot')
+                                self._phase = Phase.ENTER_ROOM
+                                self._remove = False
+                                return RemoveObject.__name__, {'object_id': info['obj_id']}
+
                 # If no obstacles are blocking the entrance, enter the area
                 if len(objects) == 0:
                     self._answered = False
@@ -732,6 +758,7 @@ class BaselineAgent(ArtificialBrain):
 
             if Phase.FOLLOW_PATH_TO_VICTIM == self._phase:
                 # Start searching for other victims if the human already rescued the target victim
+                if self._goal_vic and self._goal_vic in self._collected_victims:
                 if self._goal_vic and self._goal_vic in self._collected_victims:
                     self._phase = Phase.FIND_NEXT_GOAL
 

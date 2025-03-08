@@ -83,6 +83,7 @@ class BaselineAgent(ArtificialBrain):
 
         self._trust_history: dict[str, list[TrustEvent]] = {}
         self._trust_types: list[str] = ["Search", "Rescue Critical", "Rescue Mildly", "Remove"]
+        self.last_found_crit = None
 
     def initialize(self):
         # Initialization of the state tracker and navigation algorithm
@@ -1052,8 +1053,12 @@ class BaselineAgent(ArtificialBrain):
                 print(f"Increased willingness by 0.03 due to Search event.")
                 beliefs['willingness'] += 0.03
 
-            elif trust_type == "Found":
-                # Check if any Search event had a matching target:
+            if trust_type == "Found":
+                # Here, if the message contains "critical", update our last_found_critical variable.
+                if "critical" in message.lower():
+                    self.last_found_crit = target_area
+                    print(f"Updated last_found_critical to {self.last_found_crit}")
+                # Check if any Search event in our history had a matching target:
                 if any(event.target == target_area for event in self._trust_history["Search"]):
                     beliefs['competence'] += Z
                     print(f"Increased competence by {Z} (Found event match).")
@@ -1061,45 +1066,19 @@ class BaselineAgent(ArtificialBrain):
                     beliefs['competence'] -= Z
                     print(f"Decreased competence by {Z} (Found event no match).")
 
-            # Log together intents (for both Remove together and Rescue together)
-            elif trust_type in ["Remove together", "Rescue together"]:
-                beliefs['willingness'] += Y
-                print(f"Increased willingness by {Y} for {trust_type} event.")
+            if trust_type == "Rescue together":
+                print(self.last_found_crit)
+                # Check if the last message before this was a Found event with a critical victim.
+                if self.last_found_crit is not None:
+                    beliefs['competence'] += X
+                    print(
+                        f"Increased competence by {X} for Rescue together (last found critical: {self.last_found_crit}).")
+                else:
+                    beliefs['competence'] -= X
+                    print(f"Decreased competence by {X} for Rescue together (no matching Found event).")
 
-            elif trust_type in ["Remove alone", "Rescue alone"]:
-                beliefs['willingness'] -= Y
-                print(f"Decreased willingness by {Y} for {trust_type} event.")
-
-            # Log removal events based on fulfillment time
-            if self._remove:
-                for event in self._trust_history['Remove together']:
-                    if event.achievedTime is None:
-                        # Set the achieved time and compute delta before updating
-                        event.achievedTime = tick
-                        time_delta = tick - event.time
-                        if time_delta < 66:
-                            beliefs['competence'] += Z
-                            print(f"Increased competence by {Z} (fast removal).")
-                        else:
-                            beliefs['competence'] -= Z
-                            print(f"Decreased competence by {Z} (slow removal).")
-
-            # Log rescue events based on fulfillment time
-            if self._rescue:
-                for event in self._trust_history['Rescue together']:
-                    if event.achievedTime is None:
-                        event.achievedTime = tick
-                        time_delta = tick - event.time
-                        if time_delta < 66:
-                            increment = X if (
-                                        self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
-                            beliefs['competence'] += increment
-                            print(f"Increased competence by {increment} (fast rescue).")
-                        else:
-                            decrement = X if (
-                                        self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
-                            beliefs['competence'] -= decrement
-                            print(f"Decreased competence by {decrement} (slow rescue).")
+            # You can add similar blocks for "Remove together", "Rescue alone", etc.
+            # For example, for "Remove together", you could update willingness similarly.
 
             # Restrict the beliefs to a range of -1 to 1
             beliefs['competence'] = np.clip(beliefs['competence'], -1, 1)

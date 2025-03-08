@@ -84,20 +84,32 @@ class BaselineAgent(ArtificialBrain):
         # Filtering of the world state before deciding on an action 
         return state
 
-    def get_trust(self):
-        # classifies trust belief as high, mid, low
+    def get_trust(self, task, confidence):
+        # returns true if human trustworthy for the given task, false if not
+
+        # trust_values = trustBeliefs
         trust_values = self._loadBelief(self._team_members, self._folder)
 
         name = self._human_name
-        C = trust_values[name]['competence']
-        W = trust_values[name]['willingness']
+        threshold = 0
 
-        if 0 <= C < -0.33 and 0 <= W < -0.33:
-            return "low"
-        if -0.33 <= C <= 0.33 and -0.33 <= W <= 0.33:
-            return "mid"
-        if 0.33 <= C <= 1 and 0.33 <= W <= 1:
-            return "high"
+        # different task types have different thresholds
+        if task == 'Rescue Critical':
+            threshold = 0
+        elif task == 'Rescue Mildly':
+            threshold = 0
+        elif task == 'Remove':
+            threshold = 0
+        elif task == 'Search':
+            threshold = 0
+
+        C = trust_values[name]['competence'][task] * confidence
+        W = trust_values[name]['willingness'][task] * (1 - confidence)
+
+        trust = C + W
+
+        return trust >= threshold
+
 
     def decide_on_actions(self, state):
         # Identify team members
@@ -164,7 +176,7 @@ class BaselineAgent(ArtificialBrain):
                 Each critical victim (critically injured girl/critically injured elderly woman/critically injured man/critically injured dog) adds 6 points to our score, \
                 each mild victim (mildly injured boy/mildly injured elderly man/mildly injured woman/mildly injured cat) 3 points. \
                 If you are ready to begin our mission, you can simply start moving.', 'RescueBot')
-                # Wait untill the human starts moving before going to the next phase, otherwise remain idle
+                # Wait until the human starts moving before going to the next phase, otherwise remain idle
                 if not state[{'is_human_agent': True}]:
                     self._phase = Phase.FIND_NEXT_GOAL
                 else:
@@ -180,6 +192,9 @@ class BaselineAgent(ArtificialBrain):
                 remaining_zones = []
                 remaining_vics = []
                 remaining = {}
+
+                trust = self.get_trust(trustBeliefs)
+
                 # Identification of the location of the drop zones
                 zones = self._get_drop_zones(state)
                 # Identification of which victims still need to be rescued and on which location they should be dropped
@@ -219,10 +234,12 @@ class BaselineAgent(ArtificialBrain):
                         self._goal_vic = vic
                         self._goal_loc = remaining[vic]
                         # Rescue together when victim is critical or when the human is weak and the victim is mildly injured
-                        if 'critical' in vic or 'mild' in vic and self._condition == 'weak':
+                        ## If victim mildly injured & human weak but not trustworthy, don't rescue together
+                        if 'critical' in vic or ('mild' in vic and self._condition == 'weak' and self.get_trust('Rescue Critical')):
                             self._rescue = 'together'
                         # Rescue alone if the victim is mildly injured and the human not weak
-                        if 'mild' in vic and self._condition != 'weak':
+                        ## Rescue alone if victim is mildly injured and human untrustworthy
+                        if 'mild' in vic and (self._condition != 'weak' or not self.get_trust('Rescue Mildly')):
                             self._rescue = 'alone'
                         # Plan path to victim because the exact location is known (i.e., the agent found this victim)
                         if 'location' in self._found_victim_logs[vic].keys():
@@ -279,6 +296,7 @@ class BaselineAgent(ArtificialBrain):
                             self._doormat = (3, 5)
                         self._phase = Phase.PLAN_PATH_TO_ROOM
 
+            ## Phase 4 is not influenced by trust belief
             if Phase.PLAN_PATH_TO_ROOM == self._phase:
                 # Reset the navigator for a new path planning
                 self._navigator.reset_full()
@@ -310,6 +328,7 @@ class BaselineAgent(ArtificialBrain):
                 # Follow the route to the next area to search
                 self._phase = Phase.FOLLOW_PATH_TO_ROOM
 
+            ## Phase 5 is not influenced by trust belief
             if Phase.FOLLOW_PATH_TO_ROOM == self._phase:
                 # Check if the previously identified target victim was rescued by the human
                 if self._goal_vic and self._goal_vic in self._collected_victims:
@@ -694,7 +713,7 @@ class BaselineAgent(ArtificialBrain):
                     self._todo.append(self._recent_vic)
                     self._recent_vic = None
                     self._phase = Phase.FIND_NEXT_GOAL
-                # Remain idle untill the human communicates to the agent what to do with the found victim
+                # Remain idle until the human communicates to the agent what to do with the found victim
                 if self.received_messages_content and self._waiting and self.received_messages_content[
                     -1] != 'Rescue' and self.received_messages_content[-1] != 'Continue':
                     return None, {}

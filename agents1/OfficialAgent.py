@@ -120,7 +120,7 @@ class BaselineAgent(ArtificialBrain):
         # Initialize and update trust beliefs for team members
         trustBeliefs = self._loadBelief(self._team_members, self._folder)
         trustBeliefs = self._trustBelief(self._team_members, trustBeliefs, self._folder, unprocessed,
-                                         state['World']['nr_ticks'])
+                                         state['World']['nr_ticks'], state)
         self._last_message = len(self._received_messages)
 
         # Modifications:
@@ -921,6 +921,7 @@ class BaselineAgent(ArtificialBrain):
                         self.received_messages_content = []
                         self._moving = True
                         self._remove = True
+                        print('Remove is:', self._remove)
                         if self._waiting and self._recent_vic:
                             self._todo.append(self._recent_vic)
                         self._waiting = False
@@ -999,7 +1000,7 @@ class BaselineAgent(ArtificialBrain):
 
         return trustBeliefs
 
-    def _trustBelief(self, members, trustBeliefs, folder, receivedMessages, tick):
+    def _trustBelief(self, members, trustBeliefs, folder, receivedMessages, tick, state, is_comp=None):
         """
         Updates trust beliefs based on received messages and observed actions.
         """
@@ -1012,6 +1013,7 @@ class BaselineAgent(ArtificialBrain):
             "Collect": "Rescue Mildly",
             "Remove together": "Remove",
             "Remove alone": "Remove",
+            "Remove": "Remove",
             "Rescue together": "Rescue Critical",  # Rescue together is related to rescuing
         }
 
@@ -1050,10 +1052,17 @@ class BaselineAgent(ArtificialBrain):
             print(f"Logged {task} event with target {target_area} at time {tick}.")
 
             if trust_type == "Search":
-                print(f"Increased willingness by 0.03 due to Search event.")
-                beliefs['willingness'] += 0.03
+                print(f"Increased willingness by Z due to Search event.")
+                beliefs['willingness'] += Z
+                if is_comp is True:
+                    print(f"Increased competence by {X} due to Search event.")
+                    beliefs['competence'] += X
+                elif is_comp is False:
+                    beliefs['competence'] -= X
+                    beliefs['willingness'] -= 2 * Z
+                    print(f"Decreased competence by {X} and willingness by {2 * Z} due to Search event.")
 
-            if trust_type == "Found":
+            elif trust_type == "Found":
                 # Here, if the message contains "critical", update our last_found_critical variable.
                 if "critical" in message.lower():
                     self.last_found_crit = target_area
@@ -1065,9 +1074,11 @@ class BaselineAgent(ArtificialBrain):
                 # Check if any Search event in our history had a matching target:
                 if any(event.target == target_area for event in self._trust_history["Search"]):
                     beliefs['competence'] += Z
+                    beliefs['willingness'] += Y
                     print(f"Increased competence by {Z} (Found event match).")
                 else:
                     beliefs['competence'] -= Z
+                    beliefs['willingness'] -= X
                     print(f"Decreased competence by {Z} (Found event no match).")
 
             if trust_type == "Collect":
@@ -1085,6 +1096,20 @@ class BaselineAgent(ArtificialBrain):
                 else:
                     beliefs['competence'] -= X
                     print(f"Decreased competence by {X} for Collect event no match (target {target_area}).")
+
+            elif trust_type in ["Remove alone", "Rescue alone"]:
+                beliefs['willingness'] -= Z
+                print(f"Decreased willingness by {Y} for {trust_type} event.")
+
+            elif trust_type == 'Remove' and target_area is not None:
+                if target_area == self._trust_history["Search"][-1].target:
+                    self._trustBelief(self._team_members, trustBeliefs, self._folder, [f"Search: {target_area}"],
+                                      state['World']['nr_ticks'], state, is_comp=True)
+                else:
+                    self._trustBelief(self._team_members, trustBeliefs, self._folder, [f"Search: {target_area}"],
+                                      state['World']['nr_ticks'], state, is_comp=False)
+                beliefs['willingness'] += Y
+                print(f"Increased willingness by {Z} for {trust_type} event.")
 
             if trust_type == "Rescue together":
                 print(self.last_found_crit)
@@ -1212,3 +1237,12 @@ class BaselineAgent(ArtificialBrain):
                 return True  # Human has visited the room
 
         return False  # Human has NOT visited the room
+
+    def _is_object_removed(self, object_id, state):
+        """
+        Checks if a specific object is still in the environment.
+        """
+        for obj in state.values():
+            if obj.get("obj_id") == object_id:
+                return False  # Object still exists
+        return True  # Object removed

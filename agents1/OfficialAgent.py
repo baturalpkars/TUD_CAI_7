@@ -84,6 +84,7 @@ class BaselineAgent(ArtificialBrain):
         self._trust_history: dict[str, list[TrustEvent]] = {}
         self._trust_types: list[str] = ["Search", "Rescue Critical", "Rescue Mildly", "Remove"]
         self.last_found_crit = None
+        self.last_found_resc = None
 
     def initialize(self):
         # Initialization of the state tracker and navigation algorithm
@@ -1008,11 +1009,10 @@ class BaselineAgent(ArtificialBrain):
         task_mapping = {
             "Search": "Search",
             "Found": "Search",  # Found is related to searching
-            "Collect": "Remove",  # Collecting is part of rescuing
+            "Collect": "Rescue Mildly",
             "Remove together": "Remove",
             "Remove alone": "Remove",
             "Rescue together": "Rescue Critical",  # Rescue together is related to rescuing
-            "Rescue alone": "Rescue Mildly",
         }
 
         for message in receivedMessages:
@@ -1058,6 +1058,10 @@ class BaselineAgent(ArtificialBrain):
                 if "critical" in message.lower():
                     self.last_found_crit = target_area
                     print(f"Updated last_found_critical to {self.last_found_crit}")
+                # Here, if the message contains "mildly, update our last_found_mild variable.
+                if "mildly" in message.lower():
+                    self.last_found_mildness = target_area
+                    print(f"Updated last_found_mildness to {self.last_found_mildness}")
                 # Check if any Search event in our history had a matching target:
                 if any(event.target == target_area for event in self._trust_history["Search"]):
                     beliefs['competence'] += Z
@@ -1066,11 +1070,28 @@ class BaselineAgent(ArtificialBrain):
                     beliefs['competence'] -= Z
                     print(f"Decreased competence by {Z} (Found event no match).")
 
+            if trust_type == "Collect":
+                if self._trust_history["Search"]:
+                    last_event = self._trust_history["Search"][-1]
+                    matching_found = (last_event.target == target_area)
+                else:
+                    matching_found = False
+
+                if matching_found and self.last_found_mildness is not None:
+                    beliefs['competence'] += X
+                    beliefs['willingness'] += Z
+                    print(
+                        f"Increased competence by {X} and willingness by {Z} for Collect event match (target {target_area}).")
+                else:
+                    beliefs['competence'] -= X
+                    print(f"Decreased competence by {X} for Collect event no match (target {target_area}).")
+
             if trust_type == "Rescue together":
                 print(self.last_found_crit)
                 # Check if the last message before this was a Found event with a critical victim.
                 if self.last_found_crit is not None:
                     beliefs['competence'] += X
+                    beliefs['willingness'] += Z
                     print(
                         f"Increased competence by {X} for Rescue together (last found critical: {self.last_found_crit}).")
                 else:

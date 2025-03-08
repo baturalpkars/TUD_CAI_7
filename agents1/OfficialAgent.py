@@ -548,10 +548,17 @@ class BaselineAgent(ArtificialBrain):
             if Phase.ENTER_ROOM == self._phase:
                 self._answered = False
 
-                # Check if the target victim has been rescued by the human, and switch to finding the next goal
-                if self._goal_vic in self._collected_victims:
+                trust = self.get_trust('Search')
+
+                # Check if human trustworthy and if the target victim has been rescued by the human, and switch to finding the next goal
+                if self._goal_vic in self._collected_victims and trust:
                     self._current_door = None
                     self._phase = Phase.FIND_NEXT_GOAL
+
+                # If not trustworthy, check the room
+                if  self._goal_vic in self._collected_victims and not trust:
+                    self._current_door = None
+                    self._phase = Phase.PLAN_ROOM_SEARCH_PATH
 
                 # Check if the target victim is found in a different area, and start moving there
                 if self._goal_vic in self._found_victims \

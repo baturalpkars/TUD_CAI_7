@@ -82,8 +82,7 @@ class BaselineAgent(ArtificialBrain):
         self._last_message = 0
 
         self._trust_history: dict[str, list[TrustEvent]] = {}
-        self._trust_types: list[str] = ["Search", "Found", "Collect",
-                                        "Remove together", "Rescue together"]
+        self._trust_types: list[str] = ["Search", "Rescue Critical", "Rescue Mildly", "Remove"]
 
     def initialize(self):
         # Initialization of the state tracker and navigation algorithm
@@ -939,38 +938,6 @@ class BaselineAgent(ArtificialBrain):
                                                    '14']:
                 self._human_loc = int(mssgs[-1].split()[-1])
 
-        # # Print all received messages for debugging
-        # # Debugging: Print all received messages and key attributes
-        # current_time = time.time()
-        # if current_time - self._last_print_time >= 10:
-        #     self._last_print_time = current_time  # Update last print time
-        #
-        #     # Debugging: Print all received messages and key attributes
-        #     print("\n------ DEBUG INFO ------")
-        #     print(f"Timestamp: {time.strftime('%H:%M:%S')}")
-        #     print(f"Phase: {self._phase}")
-        #     print(f"Agent Location: {state[self.agent_id]['location']}")
-        #     print(f"Current Searched Rooms: {self._searched_rooms}")
-        #     print(
-        #         f"Unsearched Rooms: {[room['room_name'] for room in state.values() if 'room_name' in room and room['room_name'] not in self._searched_rooms]}")
-        #     print(f"Found Victims: {self._found_victims}")
-        #
-        #     # Print received messages
-        #     for mssg in self.received_messages:
-        #         if mssg.from_id == 'HumanAgent':
-        #             print("\n---- Received Messages ----")
-        #             print(f"From: {mssg.from_id} | Content: {mssg.content}")
-        #             print("\n--------------------------")
-        #
-        #     # Print all objects detected in the state (limit to 10 for readability)
-        #     print("\nDetected Objects (Limited to 10):")
-        #     for i, (obj_id, obj_info) in enumerate(state.items()):
-        #         if i >= 10:
-        #             break
-        #         print(f"{obj_id}: {obj_info}")
-        #
-        #     print("\n----------------------------\n")  # End of debug print
-
     def _loadBelief(self, members, folder):
         """
         Loads trust belief values if agent already collaborated with human before, otherwise trust belief values are initialized using default values.
@@ -1050,14 +1017,16 @@ class BaselineAgent(ArtificialBrain):
         for message in receivedMessages:
             # Remember intentions to execute a search/collect/remove actions
             trust_type = message.split(":")[0]
+            print('trust type:', trust_type)
             try:
                 target_area = int(message.split()[-1])
             except ValueError:
                 # Skip messages that do not conform to the expected format
-                continue
+                target_area = None
 
             # **Convert trust_type to standardized lowercase task**
             task = task_mapping.get(trust_type, None)
+            print('task:', task)
             if task is None:
                 print(f"[WARNING] Unknown trust type: {trust_type}. Skipping.")
                 continue
@@ -1070,14 +1039,14 @@ class BaselineAgent(ArtificialBrain):
             beliefs = trustBeliefs[self._human_name][task]
 
             # Store the event in trust history
-            self._trust_history[trust_type].append(TrustEvent(
-                event_type=trust_type,
+            self._trust_history[task].append(TrustEvent(
+                event_type=task,
                 time=tick,
                 agent=self._human_name,
                 target=target_area
             ))
 
-            print(f"Logged {trust_type} event with target {target_area} at time {tick}.")
+            print(f"Logged {task} event with target {target_area} at time {tick}.")
 
             if trust_type == "Search":
                 print(f"Increased willingness by 0.03 due to Search event.")
@@ -1092,32 +1061,14 @@ class BaselineAgent(ArtificialBrain):
                     beliefs['competence'] -= Z
                     print(f"Decreased competence by {Z} (Found event no match).")
 
-            elif trust_type == "Collect":
-                # Check if any Found event had a matching target:
-                if any(event.target == target_area for event in self._trust_history["Found"]):
-                    beliefs['competence'] += Z
-                    print(f"Increased competence by {Z} (Collect event match).")
-                else:
-                    beliefs['competence'] -= Z
-                    print(f"Decreased competence by {Z} (Collect event no match).")
-
             # Log together intents (for both Remove together and Rescue together)
-            for together_intent in ['Remove together', 'Rescue together']:
-                if together_intent in message:
-                    beliefs['willingness'] += Y
-                    print(f"Increased willingness by {Y} for {together_intent} event.")
-                    self._trust_history[together_intent].append(TrustEvent(
-                        event_type=together_intent,
-                        time=tick,
-                        agent=self._human_name,
-                        target=self._recent_vic  # assuming _recent_vic holds a relevant target (e.g., victim ID)
-                    ))
+            elif trust_type in ["Remove together", "Rescue together"]:
+                beliefs['willingness'] += Y
+                print(f"Increased willingness by {Y} for {trust_type} event.")
 
-            # Log alone events
-            for alone_intent in ['Remove alone', 'Rescue alone']:
-                if alone_intent in message:
-                    beliefs['willingness'] -= Y
-                    print(f"Decreased willingness by {Y} for {alone_intent} event.")
+            elif trust_type in ["Remove alone", "Rescue alone"]:
+                beliefs['willingness'] -= Y
+                print(f"Decreased willingness by {Y} for {trust_type} event.")
 
             # Log removal events based on fulfillment time
             if self._remove:

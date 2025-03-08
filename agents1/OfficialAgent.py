@@ -976,38 +976,58 @@ class BaselineAgent(ArtificialBrain):
         Loads trust belief values if agent already collaborated with human before, otherwise trust belief values are initialized using default values.
         """
         # Create a dictionary with trust values for all team members
-        # Create a dictionary with trust values for all team members
         trustBeliefs = {}
-        # first check current trust belief file:
-        with open(folder + '/beliefs/currentTrustBelief.csv') as csvfile:
-            reader = csv.reader(csvfile, delimiter=';', quotechar="'")
-            for row in reader:
-                if row and row[0] == self._human_name:
-                    trustBeliefs[row[0]] = {'competence': float(row[1]), 'willingness': float(row[2])}
-                    return trustBeliefs
 
-        # Set a default starting trust value
-        default = 0.5
-        trustfile_header = []
-        trustfile_contents = []
-        # Check if agent already collaborated with this human before, if yes: load the corresponding trust values, if no: initialize using default trust values
-        with open(folder + '/beliefs/allTrustBeliefs.csv') as csvfile:
-            reader = csv.reader(csvfile, delimiter=';', quotechar="'")
-            for row in reader:
-                if trustfile_header == []:
-                    trustfile_header = row
-                    continue
-                # Retrieve trust values
-                if row and row[0] == self._human_name:
-                    name = row[0]
-                    competence = float(row[1])
-                    willingness = float(row[2])
-                    trustBeliefs[name] = {'competence': competence, 'willingness': willingness}
-                # Initialize default trust values
-                if row and row[0] != self._human_name:
-                    competence = default
-                    willingness = default
-                    trustBeliefs[self._human_name] = {'competence': competence, 'willingness': willingness}
+        # Define task types
+        task_types = ['Search', 'Rescue Critical', 'Rescue Mildly', 'Remove']
+        default_values = {'competence': 0.5, 'willingness': 0.5}
+
+        # Check `currentTrustBelief.csv` (short-term memory)
+        try:
+            with open(folder + '/beliefs/currentTrustBelief.csv', mode='r') as csvfile:
+                reader = csv.reader(csvfile, delimiter=';', quotechar="'")
+                next(reader)  # Skip header
+                for row in reader:
+                    if row and row[0] == self._human_name:
+                        name = row[0]
+                        task = row[1]
+                        competence = float(row[2])
+                        willingness = float(row[3])
+
+                        # Ensure dictionary structure is correct
+                        if name not in trustBeliefs:
+                            trustBeliefs[name] = {}
+
+                        # Store values **per task**
+                        trustBeliefs[name][task] = {'competence': competence, 'willingness': willingness}
+        except FileNotFoundError:
+            print("[INFO] `currentTrustBelief.csv` not found. Falling back to `allTrustBeliefs.csv`.")
+
+        # If agent not found in `currentTrustBelief.csv`, check `allTrustBeliefs.csv`
+        if self._human_name not in trustBeliefs:
+            try:
+                with open(folder + '/beliefs/allTrustBeliefs.csv', mode='r') as csvfile:
+                    reader = csv.reader(csvfile, delimiter=';', quotechar="'")
+                    next(reader)  # Skip header
+                    for row in reader:
+                        if row and row[0] == self._human_name:
+                            name = row[0]
+                            task = row[1]
+                            competence = float(row[2])
+                            willingness = float(row[3])
+
+                            # Ensure dictionary structure
+                            if name not in trustBeliefs:
+                                trustBeliefs[name] = {}
+
+                            trustBeliefs[name][task] = {'competence': competence, 'willingness': willingness}
+            except FileNotFoundError:
+                print("[INFO] `allTrustBeliefs.csv` not found. Initializing default values.")
+
+        # If agent still missing, initialize default values (new agent)
+        if self._human_name not in trustBeliefs:
+            trustBeliefs[self._human_name] = {task: default_values.copy() for task in task_types}
+
         return trustBeliefs
 
     def _trustBelief(self, members, trustBeliefs, folder, receivedMessages, tick):
@@ -1015,10 +1035,17 @@ class BaselineAgent(ArtificialBrain):
         Updates trust beliefs based on received messages and observed actions.
         """
         # Constants for trust impact
-        X, Y, Z = 0.2, 0.12, 0.75
+        X, Y, Z = 0.15, 0.1, 0.05
 
-        # Base trust belief system variables
-        beliefs = trustBeliefs[self._human_name]
+        task_mapping = {
+            "Search": "Search",
+            "Found": "Search",  # Found is related to searching
+            "Collect": "Remove",  # Collecting is part of rescuing
+            "Remove together": "Remove",
+            "Remove alone": "Remove",
+            "Rescue together": "Rescue Critical",  # Rescue together is related to rescuing
+            "Rescue alone": "Rescue Mildly",
+        }
 
         for message in receivedMessages:
             # Remember intentions to execute a search/collect/remove actions
@@ -1029,38 +1056,50 @@ class BaselineAgent(ArtificialBrain):
                 # Skip messages that do not conform to the expected format
                 continue
 
-            # For Search, Found, and Collect types, save the event and update beliefs accordingly
-            if trust_type in ["Search", "Found", "Collect"]:
-                # Save the trust event in the history
-                self._trust_history[trust_type].append(TrustEvent(
-                    event_type=trust_type,
-                    time=tick,
-                    agent=self._human_name,
-                    target=target_area
-                ))
-                print(f"Logged {trust_type} event with target {target_area} at time {tick}.")
+            # **Convert trust_type to standardized lowercase task**
+            task = task_mapping.get(trust_type, None)
+            if task is None:
+                print(f"[WARNING] Unknown trust type: {trust_type}. Skipping.")
+                continue
 
-                if trust_type == "Search":
-                    print(f"Increased willingness by 0.05 due to Search event.")
-                    beliefs['willingness'] += 0.05
+            # Ensure task exists in trustBeliefs
+            if task not in trustBeliefs[self._human_name]:
+                trustBeliefs[self._human_name][task] = {'competence': 0.5, 'willingness': 0.5}
 
-                elif trust_type == "Found":
-                    # Check if any Search event had a matching target:
-                    if any(event.target == target_area for event in self._trust_history["Search"]):
-                        beliefs['competence'] += Z
-                        print(f"Increased competence by {Z} (Found event match).")
-                    else:
-                        beliefs['competence'] -= Z
-                        print(f"Decreased competence by {Z} (Found event no match).")
+            # Base trust belief system variables
+            beliefs = trustBeliefs[self._human_name][task]
 
-                elif trust_type == "Collect":
-                    # Check if any Found event had a matching target:
-                    if any(event.target == target_area for event in self._trust_history["Found"]):
-                        beliefs['competence'] += Z
-                        print(f"Increased competence by {Z} (Collect event match).")
-                    else:
-                        beliefs['competence'] -= Z
-                        print(f"Decreased competence by {Z} (Collect event no match).")
+            # Store the event in trust history
+            self._trust_history[trust_type].append(TrustEvent(
+                event_type=trust_type,
+                time=tick,
+                agent=self._human_name,
+                target=target_area
+            ))
+
+            print(f"Logged {trust_type} event with target {target_area} at time {tick}.")
+
+            if trust_type == "Search":
+                print(f"Increased willingness by 0.03 due to Search event.")
+                beliefs['willingness'] += 0.03
+
+            elif trust_type == "Found":
+                # Check if any Search event had a matching target:
+                if any(event.target == target_area for event in self._trust_history["Search"]):
+                    beliefs['competence'] += Z
+                    print(f"Increased competence by {Z} (Found event match).")
+                else:
+                    beliefs['competence'] -= Z
+                    print(f"Decreased competence by {Z} (Found event no match).")
+
+            elif trust_type == "Collect":
+                # Check if any Found event had a matching target:
+                if any(event.target == target_area for event in self._trust_history["Found"]):
+                    beliefs['competence'] += Z
+                    print(f"Increased competence by {Z} (Collect event match).")
+                else:
+                    beliefs['competence'] -= Z
+                    print(f"Decreased competence by {Z} (Collect event no match).")
 
             # Log together intents (for both Remove together and Rescue together)
             for together_intent in ['Remove together', 'Rescue together']:
@@ -1080,56 +1119,58 @@ class BaselineAgent(ArtificialBrain):
                     beliefs['willingness'] -= Y
                     print(f"Decreased willingness by {Y} for {alone_intent} event.")
 
-        # Log removal events based on fulfillment time
-        if self._remove:
-            for event in self._trust_history['Remove together']:
-                if event.achievedTime is None:
-                    # Set the achieved time and compute delta before updating
-                    event.achievedTime = tick
-                    time_delta = tick - event.time
-                    if time_delta < 66:
-                        beliefs['competence'] += Z
-                        print(f"Increased competence by {Z} (fast removal).")
-                    else:
-                        beliefs['competence'] -= Z
-                        print(f"Decreased competence by {Z} (slow removal).")
+            # Log removal events based on fulfillment time
+            if self._remove:
+                for event in self._trust_history['Remove together']:
+                    if event.achievedTime is None:
+                        # Set the achieved time and compute delta before updating
+                        event.achievedTime = tick
+                        time_delta = tick - event.time
+                        if time_delta < 66:
+                            beliefs['competence'] += Z
+                            print(f"Increased competence by {Z} (fast removal).")
+                        else:
+                            beliefs['competence'] -= Z
+                            print(f"Decreased competence by {Z} (slow removal).")
 
-        # Log rescue events based on fulfillment time
-        if self._rescue:
-            for event in self._trust_history['Rescue together']:
-                if event.achievedTime is None:
-                    event.achievedTime = tick
-                    time_delta = tick - event.time
-                    if time_delta < 66:
-                        increment = X if (
-                                    self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
-                        beliefs['competence'] += increment
-                        print(f"Increased competence by {increment} (fast rescue).")
-                    else:
-                        decrement = X if (
-                                    self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
-                        beliefs['competence'] -= decrement
-                        print(f"Decreased competence by {decrement} (slow rescue).")
+            # Log rescue events based on fulfillment time
+            if self._rescue:
+                for event in self._trust_history['Rescue together']:
+                    if event.achievedTime is None:
+                        event.achievedTime = tick
+                        time_delta = tick - event.time
+                        if time_delta < 66:
+                            increment = X if (
+                                        self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
+                            beliefs['competence'] += increment
+                            print(f"Increased competence by {increment} (fast rescue).")
+                        else:
+                            decrement = X if (
+                                        self._goal_vic is not None and "critical" in self._goal_vic) else 0.2
+                            beliefs['competence'] -= decrement
+                            print(f"Decreased competence by {decrement} (slow rescue).")
 
-        # Restrict the beliefs to a range of -1 to 1
-        beliefs['competence'] = np.clip(beliefs['competence'], -1, 1)
-        beliefs['willingness'] = np.clip(beliefs['willingness'], -1, 1)
+            # Restrict the beliefs to a range of -1 to 1
+            beliefs['competence'] = np.clip(beliefs['competence'], -1, 1)
+            beliefs['willingness'] = np.clip(beliefs['willingness'], -1, 1)
 
-        # Update the dictionary before saving
-        trustBeliefs[self._human_name] = beliefs
+            # Update the dictionary before saving
+            trustBeliefs[self._human_name][task] = beliefs
 
         # Save current trust belief values so we can later use and retrieve them to add to a csv file with all the
         # logged trust belief values
         with open(folder + '/beliefs/currentTrustBelief.csv', mode='w') as csv_file:
             csv_writer = csv.writer(csv_file, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-            csv_writer.writerow(['name', 'competence', 'willingness'])
-            csv_writer.writerow([self._human_name, beliefs['competence'], beliefs['willingness']])
+            csv_writer.writerow(['name', 'task', 'competence', 'willingness'])
+            for name, tasks in trustBeliefs.items():
+                for task, values in tasks.items():
+                    csv_writer.writerow([name, task, values['competence'], values['willingness']])
 
-        with open("trust_debug_log.txt", "a") as log:
-            log.write(f"Tick: {tick}, Agent: {self._human_name}\n")
-            log.write(f"  Competence: {beliefs['competence']}, Willingness: {beliefs['willingness']}\n")
-            log.write(f"  Trust History: {self._trust_history}\n")
-            log.write("-" * 40 + "\n")
+        # with open("trust_debug_log.txt", "a") as log:
+        #     log.write(f"Tick: {tick}, Agent: {self._human_name}\n")
+        #     log.write(f"  Competence: {beliefs['competence']}, Willingness: {beliefs['willingness']}\n")
+        #     log.write(f"  Trust History: {self._trust_history}\n")
+        #     log.write("-" * 40 + "\n")
 
         # result
         return trustBeliefs

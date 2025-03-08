@@ -519,6 +519,7 @@ class BaselineAgent(ArtificialBrain):
                                     if not self._remove:
                                         self._answered = True
                                         self._waiting = False
+                                        self._wait_start = None  # clear attribute holding the start tick of waiting
                                         self._send_message('Human Untrustworthy - Removing tree blocking ' + str(self._door['room_name']) + '.',
                                                            'RescueBot')
                                     if self._remove:
@@ -526,6 +527,7 @@ class BaselineAgent(ArtificialBrain):
                                             self._door['room_name']) + ' because you asked me to.', 'RescueBot')
                                     self._phase = Phase.ENTER_ROOM
                                     self._remove = False
+                                    self._wait_start = None  # clear attribute holding the start tick of waiting
                                     return RemoveObject.__name__, {'object_id': info['obj_id']}
 
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'stone' in \
@@ -592,6 +594,7 @@ class BaselineAgent(ArtificialBrain):
                                         'Human Untrustworthy - Removing stones blocking ' + str(self._door['room_name']) + '.',
                                         'RescueBot')
                                     self._phase = Phase.ENTER_ROOM
+                                    self._wait_start = None  # clear attribute holding the start tick of waiting
                                     self._remove = False
                                     return RemoveObject.__name__, {'object_id': info['obj_id']}
 
@@ -842,6 +845,7 @@ class BaselineAgent(ArtificialBrain):
                         'class_inheritance'] and 'mild' in info['obj_id'] and info['location'] in self._roomtiles:
                         objects.append(info)
                         # Remain idle when the human has not arrived at the location
+                        ## Remain idle for a set time, then 
                         if not self._human_name in info['name']:
                             self._waiting = True
                             self._moving = False

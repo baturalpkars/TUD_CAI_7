@@ -108,20 +108,20 @@ class BaselineAgent(ArtificialBrain):
         trust_values = self._loadBelief(self._team_members, self._folder)
 
         name = self._human_name
-        threshold = 0
+        threshold = 1
 
         # different task types have different thresholds
         if task == 'Rescue Critical':
-            threshold = 0
+            threshold = 1
         elif task == 'Rescue Mildly':
-            threshold = 0
+            threshold = 1
         elif task == 'Remove':
-            threshold = 0
+            threshold = 1
         elif task == 'Search':
-            threshold = 0
+            threshold = 1
 
-        C = trust_values[name]['competence'][task] * confidence
-        W = trust_values[name]['willingness'][task] * (1 - confidence)
+        C = trust_values[name][task]['competence'] * confidence
+        W = trust_values[name][task]['willingness'] * (1 - confidence)
 
         trust = C + W
 
@@ -289,8 +289,6 @@ class BaselineAgent(ArtificialBrain):
 
             if Phase.PICK_UNSEARCHED_ROOM == self._phase:
                 agent_location = state[self.agent_id]['location']
-
-
                 # Identify which areas are not explored yet
                 unsearched_rooms = [room['room_name'] for room in state.values()
                                     if 'class_inheritance' in room
@@ -307,41 +305,30 @@ class BaselineAgent(ArtificialBrain):
                     self._send_message('Going to re-search all areas.', 'RescueBot')
                     self._phase = Phase.FIND_NEXT_GOAL
                 # If there are still areas to search, define which one to search next
-                if len(unsearched_rooms) > 0:
-                    trust = self.get_trust('Search')
-                    # If human is trustworthy let it search the room
-                    if self._human_name and trust:
-                        room_for_human_search = unsearched_rooms[0]
-                        self._to_search.append(room_for_human_search)
-
-                        self._send_message('You shall search ' + room_for_human_search + ', I trust you ' + self._human_name, 'RescueBot')
-
-                        self._phase = Phase.FIND_NEXT_GOAL
-                        return Idle.__name__, {'duration_in_ticks': 25}
-                    # Else search the room yourself
-                    else:
-                        # Identify the closest door when the agent did not search any areas yet
-                        if self._current_door == None:
-                            # Find all area entrance locations
-                            self._door = state.get_room_doors(self._getClosestRoom(state, unsearched_rooms, agent_location))[
-                                0]
-                            self._doormat = \
-                                state.get_room(self._getClosestRoom(state, unsearched_rooms, agent_location))[-1]['doormat']
-                            # Workaround for one area because of some bug
-                            if self._door['room_name'] == 'area 1':
-                                self._doormat = (3, 5)
-                            # Plan path to area
-                            self._phase = Phase.PLAN_PATH_TO_ROOM
-                        # Identify the closest door when the agent just searched another area
-                        if self._current_door != None:
-                            self._door = \
-                                state.get_room_doors(self._getClosestRoom(state, unsearched_rooms, self._current_door))[0]
-                            self._doormat = \
-                                state.get_room(self._getClosestRoom(state, unsearched_rooms, self._current_door))[-1][
-                                    'doormat']
-                            if self._door['room_name'] == 'area 1':
-                                self._doormat = (3, 5)
-                            self._phase = Phase.PLAN_PATH_TO_ROOM
+                else:
+                    # Identify the closest door when the agent did not search any areas yet
+                    if self._current_door == None:
+                        # Find all area entrance locations
+                        self._door = \
+                        state.get_room_doors(self._getClosestRoom(state, unsearched_rooms, agent_location))[
+                            0]
+                        self._doormat = \
+                            state.get_room(self._getClosestRoom(state, unsearched_rooms, agent_location))[-1]['doormat']
+                        # Workaround for one area because of some bug
+                        if self._door['room_name'] == 'area 1':
+                            self._doormat = (3, 5)
+                        # Plan path to area
+                        self._phase = Phase.PLAN_PATH_TO_ROOM
+                    # Identify the closest door when the agent just searched another area
+                    if self._current_door != None:
+                        self._door = \
+                            state.get_room_doors(self._getClosestRoom(state, unsearched_rooms, self._current_door))[0]
+                        self._doormat = \
+                            state.get_room(self._getClosestRoom(state, unsearched_rooms, self._current_door))[-1][
+                                'doormat']
+                        if self._door['room_name'] == 'area 1':
+                            self._doormat = (3, 5)
+                        self._phase = Phase.PLAN_PATH_TO_ROOM
 
             ## Phase 4 is not influenced by trust belief
             if Phase.PLAN_PATH_TO_ROOM == self._phase:

@@ -1,2 +1,5 @@
-name;task;competence;willingness
-;;;;
+name;task;competence;willingness
+donald;Search;0.5;0.5
+donald;Rescue Critical;0.5;0.5
+donald;Rescue Mildly;0.5;0.5
+donald;Remove;0.5;0.5

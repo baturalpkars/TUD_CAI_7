@@ -447,7 +447,7 @@ class BaselineAgent(ArtificialBrain):
                                 \n clock - removal time: 5 seconds \n afstand - distance between us: ' + self._distance_human,
                                                'RescueBot')
                             self._waiting = True
-                            self._wait_start = self._tick
+                            self._wait_start = state['World']['nr_ticks']
                             # Determine the next area to explore if the human tells the agent not to remove the obstacle and human trustworthy
                             ## Or if human untrustworthy
                         if (self.received_messages_content and self.received_messages_content[
@@ -482,7 +482,7 @@ class BaselineAgent(ArtificialBrain):
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 10  # wait for 10 ticks
+                                wait_threshold = 30  # wait for 10 ticks
                                 current_tick = state['World']['nr_ticks']
                                 if current_tick - self._wait_start < wait_threshold:
                                     return Idle.__name__, {'duration_in_ticks': 1}
@@ -506,7 +506,7 @@ class BaselineAgent(ArtificialBrain):
                                 self._searched_rooms).replace('area ', '') + ' \
                                 \n clock - removal time: 10 seconds', 'RescueBot')
                             self._waiting = True
-                            self._wait_start = self._tick
+                            self._wait_start = state['World']['nr_ticks']
 
                         # Determine the next area to explore if the human tells the agent not to remove the obstacle
                         ## Only if human is trustworthy
@@ -546,7 +546,7 @@ class BaselineAgent(ArtificialBrain):
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 10  # wait for 10 ticks
+                                wait_threshold = 30  # wait for 10 ticks
                                 current_tick = state['World']['nr_ticks']
                                 if current_tick - self._wait_start < wait_threshold:
                                     return Idle.__name__, {'duration_in_ticks': 1}
@@ -578,7 +578,7 @@ class BaselineAgent(ArtificialBrain):
                                 \n clock - removal time together: 3 seconds \n afstand - distance between us: ' + self._distance_human + '\n clock - removal time alone: 20 seconds',
                                                'RescueBot')
                             self._waiting = True
-                            self._wait_start = self._tick
+                            self._wait_start = state['World']['nr_ticks']
 
                         # Determine the next area to explore if the human tells the agent not to remove the obstacle
                         ## Follow what human says only if trustworthy
@@ -627,7 +627,7 @@ class BaselineAgent(ArtificialBrain):
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 10  # wait for 10 ticks
+                                wait_threshold = 30  # wait for 10 ticks
                                 current_tick = state['World']['nr_ticks']
                                 if current_tick - self._wait_start < wait_threshold:
                                     return Idle.__name__, {'duration_in_ticks': 1}

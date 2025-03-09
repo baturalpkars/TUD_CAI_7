@@ -492,6 +492,8 @@ class BaselineAgent(ArtificialBrain):
                                     self._waiting = False
                                     self._wait_start = None  # clear attribute holding the start tick of waiting
                                     self._send_message('Human, i trusted you but you kept me waiting, i will skip Rock', 'RescueBot')
+                                    self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                      ["Remove Not Responded"], state['World']['nr_ticks'], state)
                                     self._to_search.append(self._door['room_name'])
                                     self._phase = Phase.FIND_NEXT_GOAL
 
@@ -558,6 +560,8 @@ class BaselineAgent(ArtificialBrain):
                                         self._wait_start = None  # clear attribute holding the start tick of waiting
                                         self._send_message('Human, i trusted you but you kept me waiting, i will remove tree on my own ' + str(self._door['room_name']) + '.',
                                                            'RescueBot')
+                                        self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                          ["Remove Not Responded"], state['World']['nr_ticks'], state)
                                     if self._remove:
                                         self._send_message(' ' + str(
                                             self._door['room_name']) + ' because i waited too long.', 'RescueBot')
@@ -637,6 +641,8 @@ class BaselineAgent(ArtificialBrain):
                                     self._send_message(
                                         'Human, i trusted you but you kept me waiting. Removing stones blocking ' + str(self._door['room_name']) + '.',
                                         'RescueBot')
+                                    self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                      ["Remove Not Responded"], state['World']['nr_ticks'], state)
                                     self._phase = Phase.ENTER_ROOM
                                     self._wait_start = None  # clear attribute holding the start tick of waiting
                                     self._remove = False
@@ -1140,6 +1146,7 @@ class BaselineAgent(ArtificialBrain):
             "Remove alone": "Remove",
             "Remove": "Remove",
             "Rescue together": "Rescue Critical",  # Rescue together is related to rescuing
+            "Remove Not Responded": "Remove",
         }
 
         for message in receivedMessages:
@@ -1235,6 +1242,10 @@ class BaselineAgent(ArtificialBrain):
                                       state['World']['nr_ticks'], state, is_comp=False)
                 beliefs['willingness'] += Y
                 print(f"Increased willingness by {Z} for {trust_type} event.")
+
+            elif trust_type == "Remove Not Responded":
+                beliefs['willingness'] -= Y
+                print(f"Decreased willingness by {Y} for Remove event.")
 
             if trust_type == "Rescue together":
                 print(self.last_found_crit)

@@ -73,7 +73,7 @@ class BaselineAgent(ArtificialBrain):
         self._carrying = False
         self._waiting = False
         self._wait_start = None
-        self._wait_threshold = 60
+        self._wait_threshold = 100
         self._rescue = None
         self._recent_vic = None
         self._received_messages = []
@@ -983,6 +983,8 @@ class BaselineAgent(ArtificialBrain):
                                 self._send_message('Human, I trusted you but you kept me waiting. I cannot rescue a critical victim ' + self._recent_vic + ' in ' + self._door['room_name'] + ' alone. Moving on. ', 'RescueBot')
                             if not self.get_trust('Rescue Critical'):
                                 self._send_message('Human Untrustworthy - I cannot rescue critical victim ' + self._recent_vic + ' in ' + self._door['room_name'] + ' alone. Moving on. ', 'RescueBot')
+                            self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                              ["Rescue Critical Not Responded"], state['World']['nr_ticks'], state)
                             self._answered = True
                             self._waiting = False
                             self._todo.append(self._recent_vic)
@@ -994,6 +996,8 @@ class BaselineAgent(ArtificialBrain):
                                 self._send_message('Human, I trusted you but you kept me waiting. I will rescue victim ' + self._recent_vic + ' in ' + self._door['room_name'] + ' on my own. ', 'RescueBot')
                             if not self.get_trust('Rescue Mildly'):
                                 self._send_message('Human Untrustworthy - I will rescue victim ' + self._recent_vic + ' in ' + self._door['room_name'] + ' on my own. ', 'RescueBot')
+                            self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                              ["Rescue Mildly Not Responded"], state['World']['nr_ticks'], state)
                             self._rescue = 'alone'
                             self._answered = True
                             self._waiting = False
@@ -1303,6 +1307,8 @@ class BaselineAgent(ArtificialBrain):
             "Rescue": "Rescue Critical",# Rescue together is related to rescuing
             "Remove Not Responded": "Remove",
             "Remove Responded": "Remove",
+            "Rescue Critical Not Responded": "Rescue Critical",
+            "Rescue Mildly Not Responded": "Rescue Mildly",
             "Rescue alone": "Rescue Mildly"
         }
 
@@ -1415,12 +1421,20 @@ class BaselineAgent(ArtificialBrain):
                 beliefs['competence'] += Y
                 print(f"Increased willingness by {X} and Increased competence by {Y} for Remove event.")
 
+            elif trust_type == "Rescue Critical Not Responded":
+                beliefs['willingness'] -= Y
+                print(f"Decrease willingness by {Y} for Rescue Critical event.")
+
+            elif trust_type == "Rescue Mildly Not Responded":
+                beliefs['willingness'] -= Y
+                print(f"Decrease willingness by {Y} for Rescue Critical event.")
+
             if trust_type == "Rescue":
                 print(self.last_found_crit)
                 # Check if the last message before this was a Found event with a critical victim.
                 if self.last_found_crit is not None:
                     beliefs['competence'] += X
-                    beliefs['willingness'] += Z
+                    beliefs['willingness'] += Y
                     print(
                         f"Increased competence by {X} for Rescue together (last found critical: {self.last_found_crit}).")
                     self.last_found_crit = None
@@ -1433,7 +1447,7 @@ class BaselineAgent(ArtificialBrain):
                 # Check if the last message before this was a Found event with a critical victim.
                 if self.last_found_mildness is not None:
                     beliefs['competence'] += X
-                    beliefs['willingness'] += Z
+                    beliefs['willingness'] += Y
                     print(
                         f"Increased competence by {X} for Rescue together (last found mild: {self.last_found_crit}).")
                     self.last_found_mildness = None

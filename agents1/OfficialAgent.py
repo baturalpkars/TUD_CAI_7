@@ -101,24 +101,24 @@ class BaselineAgent(ArtificialBrain):
         # Filtering of the world state before deciding on an action 
         return state
 
-    def get_trust(self, task, confidence = 0.5):
+    def get_trust(self, task, confidence=0.5):
         # returns true if human trustworthy for the given task, false if not
 
         # trust_values = trustBeliefs
         trust_values = self._loadBelief(self._team_members, self._folder)
 
         name = self._human_name
-        threshold = 1
+        threshold = 0
 
         # different task types have different thresholds
         if task == 'Rescue Critical':
-            threshold = 1
+            threshold = 0
         elif task == 'Rescue Mildly':
-            threshold = 1
+            threshold = 0
         elif task == 'Remove':
-            threshold = 1
+            threshold = 0
         elif task == 'Search':
-            threshold = 1
+            threshold = 0
 
         C = trust_values[name][task]['competence'] * confidence
         W = trust_values[name][task]['willingness'] * (1 - confidence)
@@ -126,7 +126,6 @@ class BaselineAgent(ArtificialBrain):
         trust = C + W
 
         return trust >= threshold
-
 
     def decide_on_actions(self, state):
         # Identify team members
@@ -191,7 +190,7 @@ class BaselineAgent(ArtificialBrain):
                 info['is_carrying']) > 0 and 'mild' in info['is_carrying'][0][
                 'obj_id'] and self._rescue == 'together' and not self._moving:
                 # If victim is being carried, add to collected victims memory
-                if info['is_carrying'][0]['img_name'][8-4] not in self._collected_victims:
+                if info['is_carrying'][0]['img_name'][8 - 4] not in self._collected_victims:
                     self._collected_victims.append(info['is_carrying'][0]['img_name'][8:-4])
                 self._carrying_together = True
             if 'is_human_agent' in info and self._human_name in info['name'] and len(info['is_carrying']) == 0:
@@ -268,7 +267,8 @@ class BaselineAgent(ArtificialBrain):
                         self._goal_loc = remaining[vic]
                         # Rescue together when victim is critical or when the human is weak and the victim is mildly injured
                         ## If victim mildly injured & human weak but not trustworthy, don't rescue together
-                        if 'critical' in vic or ('mild' in vic and self._condition == 'weak' and self.get_trust('Rescue Critical')):
+                        if 'critical' in vic or (
+                                'mild' in vic and self._condition == 'weak' and self.get_trust('Rescue Critical')):
                             self._rescue = 'together'
                         # Rescue alone if the victim is mildly injured and the human not weak
                         ## Rescue alone if victim is mildly injured and human untrustworthy
@@ -310,8 +310,8 @@ class BaselineAgent(ArtificialBrain):
                     if self._current_door == None:
                         # Find all area entrance locations
                         self._door = \
-                        state.get_room_doors(self._getClosestRoom(state, unsearched_rooms, agent_location))[
-                            0]
+                            state.get_room_doors(self._getClosestRoom(state, unsearched_rooms, agent_location))[
+                                0]
                         self._doormat = \
                             state.get_room(self._getClosestRoom(state, unsearched_rooms, agent_location))[-1]['doormat']
                         # Workaround for one area because of some bug
@@ -463,7 +463,7 @@ class BaselineAgent(ArtificialBrain):
                         # Wait for the human to help removing the obstacle and remove the obstacle together
                         ## Only if human trustworthy?
                         if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Remove' and self.get_trust('Remove') or self._remove :
+                            -1] == 'Remove' and self.get_trust('Remove') or self._remove:
                             if not self._remove:
                                 self._answered = True
                             # Tell the human to come over and be idle untill human arrives
@@ -495,7 +495,6 @@ class BaselineAgent(ArtificialBrain):
                                     self._to_search.append(self._door['room_name'])
                                     self._phase = Phase.FIND_NEXT_GOAL
 
-
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'tree' in info[
                         'obj_id']:
                         objects.append(info)
@@ -521,7 +520,8 @@ class BaselineAgent(ArtificialBrain):
                         # Remove the obstacle if the human tells the agent to do so
                         ## Or if human untrustworthy
                         if (self.received_messages_content and self.received_messages_content[
-                            -1] == 'Remove' or self._remove and self.get_trust('Remove')) or not self.get_trust('Remove'):
+                            -1] == 'Remove' or self._remove and self.get_trust('Remove')) or not self.get_trust(
+                            'Remove'):
                             if not self._remove:
                                 self._answered = True
                                 self._waiting = False
@@ -592,7 +592,8 @@ class BaselineAgent(ArtificialBrain):
                         # Remove the obstacle alone if the human decides so and is trustworthy
                         ## Or if human is not trustworthy
                         if (self.received_messages_content and (self.received_messages_content[
-                            -1] == 'Remove alone' and self.get_trust("Remove")) and not self._remove) or not self.get_trust("Remove"):
+                                                                    -1] == 'Remove alone' and self.get_trust(
+                            "Remove")) and not self._remove) or not self.get_trust("Remove"):
                             self._answered = True
                             self._waiting = False
 
@@ -659,7 +660,7 @@ class BaselineAgent(ArtificialBrain):
                     self._phase = Phase.FIND_NEXT_GOAL
 
                 # If not trustworthy, check the room
-                if  self._goal_vic in self._collected_victims and not trust:
+                if self._goal_vic in self._collected_victims and not trust:
                     self._current_door = None
                     self._phase = Phase.PLAN_ROOM_SEARCH_PATH
 
@@ -1074,7 +1075,7 @@ class BaselineAgent(ArtificialBrain):
 
         # Define task types
         task_types = ['Search', 'Rescue Critical', 'Rescue Mildly', 'Remove']
-        default_values = {'competence': 0.5, 'willingness': 0.5}
+        default_values = {'competence': 0.0, 'willingness': 0.0}
 
         # Check `currentTrustBelief.csv` (short-term memory)
         try:
@@ -1160,7 +1161,7 @@ class BaselineAgent(ArtificialBrain):
 
             # Ensure task exists in trustBeliefs
             if task not in trustBeliefs[self._human_name]:
-                trustBeliefs[self._human_name][task] = {'competence': 0.5, 'willingness': 0.5}
+                trustBeliefs[self._human_name][task] = {'competence': 0.0, 'willingness': 0.0}
 
             # Base trust belief system variables
             beliefs = trustBeliefs[self._human_name][task]
@@ -1351,9 +1352,6 @@ class BaselineAgent(ArtificialBrain):
 
         # Get the human's past locations
         past_locations = self._past_locations.get(human_id, [])
-
-        print(f"🔍 Past locations of Human: {past_locations}")
-        print(f"🔍 Current room locations: {room_locations}")
 
         # Check if any past location is inside the room
         for loc in past_locations:

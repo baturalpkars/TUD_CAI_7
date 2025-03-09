@@ -1,5 +1,4 @@
-name;task;competence;willingness
-alice;Search;0.0;0.3
-alice;Rescue Critical;0.0;0.0
-alice;Rescue Mildly;0.0;0.0
-alice;Remove;0.0;-0.5
+
+name;task;competence;willingness
+;;;;
+

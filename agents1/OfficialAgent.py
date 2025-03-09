@@ -73,6 +73,7 @@ class BaselineAgent(ArtificialBrain):
         self._carrying = False
         self._waiting = False
         self._wait_start = None
+        self._wait_threshold = 60
         self._rescue = None
         self._recent_vic = None
         self._received_messages = []
@@ -81,11 +82,13 @@ class BaselineAgent(ArtificialBrain):
         self.ticks = 0
         self._processed_messages = []
         self._last_message = 0
-
+        self._afterResponse = False
+        self._removed_together = False
         self._trust_history: dict[str, list[TrustEvent]] = {}
         self._trust_types: list[str] = ["Search", "Rescue Critical", "Rescue Mildly", "Remove"]
         self.last_found_crit = None
         self.last_found_resc = None
+        self.last_found_mildness = None
 
     def initialize(self):
         # Initialization of the state tracker and navigation algorithm
@@ -112,13 +115,13 @@ class BaselineAgent(ArtificialBrain):
 
         # different task types have different thresholds
         if task == 'Rescue Critical':
-            threshold = -1
+            threshold = -0.8
         elif task == 'Rescue Mildly':
-            threshold = -1
+            threshold = -0.3
         elif task == 'Remove':
-            threshold = -1
+            threshold = -0.3
         elif task == 'Search':
-            threshold = -1
+            threshold = -0.3
 
         C = trust_values[name][task]['competence'] * confidence
         W = trust_values[name][task]['willingness'] * (1 - confidence)
@@ -451,51 +454,99 @@ class BaselineAgent(ArtificialBrain):
                             # Determine the next area to explore if the human tells the agent not to remove the obstacle and human trustworthy
                             ## Or if human untrustworthy
                         if (self.received_messages_content and self.received_messages_content[
-                            -1] == 'Continue' and not self._remove and self.get_trust('Remove')) or not self.get_trust('Remove'):
+                            -1] == 'Continue' and not self._remove and self.get_trust('Remove')) or not self.get_trust(
+                            'Remove'):
                             self._answered = True
                             self._waiting = False
                             # Add area to the to do list
                             self._to_search.append(self._door['room_name'])
                             if not self.get_trust('Remove'):
-                                self._send_message('Human Untrustworthy - Skipping Rock ' + str(self._door['room_name']) + '.',
-                                                       'RescueBot')
+                                self._send_message(
+                                    'Human Untrustworthy - Skipping Rock ' + str(self._door['room_name']) + '.',
+                                    'RescueBot')
                             self._phase = Phase.FIND_NEXT_GOAL
                         # Wait for the human to help removing the obstacle and remove the obstacle together
                         ## Only if human trustworthy?
-                        if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Remove' and self.get_trust('Remove') or self._remove:
+                        if (self.received_messages_content and self.received_messages_content[
+                            -1] == 'Remove' and self.get_trust('Remove') or self._remove) or self._afterResponse:
                             if not self._remove:
                                 self._answered = True
+                                self._waiting = False
+
                             # Tell the human to come over and be idle untill human arrives
                             if not state[{'is_human_agent': True}]:
                                 self._send_message(
-                                    'Please come to ' + str(self._door['room_name']) + ' to remove rock.',
+                                    'Please come to ' + str(
+                                        self._door['room_name']) + ' to remove rock together.',
                                     'RescueBot')
-                                return None, {}
-                            # Tell the human to remove the obstacle when he/she arrives
+
+                                # What if the human says they will come but they don't show up??
+                                if not self._waiting:
+                                    self._waiting = True
+                                    if not self._afterResponse:
+                                        self._wait_start = state['World']['nr_ticks']
+
+                                # Continuously check if the waiting time has exceeded the threshold**
+                                if self._waiting:
+                                    current_tick = state['World']['nr_ticks']
+
+                                    if current_tick - self._wait_start < self._wait_threshold:
+                                        return Idle.__name__, {'duration_in_ticks': 1}
+
+                                    else:  # If waited too long, remove the stones alone
+                                        self._send_message(
+                                            'Human, i trusted you but you kept me waiting, i will skip Rock',
+                                            'RescueBot')
+                                        self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                          ["Remove Not Responded"], state['World']['nr_ticks'], state)
+
+                                        self._to_search.append(self._door['room_name'])
+                                        self._waiting = False  # top waiting
+                                        self._answered = True
+                                        self._wait_start = None  # Reset timer
+                                        self._remove = False
+                                        self._afterResponse = False
+                                        self._phase = Phase.FIND_NEXT_GOAL
+
                             if state[{'is_human_agent': True}]:
-                                self._send_message('Lets remove rock blocking ' + str(self._door['room_name']) + '!',
+                                self._send_message('Lets remove the rock blocking ' + str(self._door['room_name']) + '!',
                                                    'RescueBot')
+                                self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                  ["Remove Responded"], state['World']['nr_ticks'],
+                                                  state, removed=self._removed_together)
+                                self._waiting = False
+                                self._wait_start = None
+                                self._afterResponse = False
+                                self._removed_together = True
                                 return None, {}
                         # Remain idle until the human communicates what to do with the identified obstacle
                         ## If human trustworthy, remain idle for a specific amount of time, then move on
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 50  # wait for 10 ticks
+
                                 current_tick = state['World']['nr_ticks']
-                                if current_tick - self._wait_start < wait_threshold:
-                                    return Idle.__name__, {'duration_in_ticks': 1}
-                                else:
-                                    # wait threshold exceeded, move on (can't do rock on its own)
-                                    self._answered = True
+
+                                # Responded
+                                if self._answered:
                                     self._waiting = False
-                                    self._wait_start = None  # clear attribute holding the start tick of waiting
-                                    self._send_message('Human, i trusted you but you kept me waiting, i will skip Rock', 'RescueBot')
-                                    self._trustBelief(self._team_members, trustBeliefs, self._folder,
-                                                      ["Remove Not Responded"], state['World']['nr_ticks'], state)
-                                    self._to_search.append(self._door['room_name'])
-                                    self._phase = Phase.FIND_NEXT_GOAL
+                                    # self._wait_start = None  # Reset waiting timer
+                                    self._afterResponse = True
+                                    return None, {}
+
+                                if current_tick - self._wait_start < self._wait_threshold:
+                                    return Idle.__name__, {'duration_in_ticks': 1}
+
+                                # Human didn't respond in time, removing alone.
+                                self._answered = True
+                                self._waiting = False
+                                self._wait_start = None  # clear attribute holding the start tick of waiting
+                                self._send_message('Human, i trusted you but you kept me waiting, i will skip Rock',
+                                                   'RescueBot')
+                                self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                  ["Remove Not Responded"], state['World']['nr_ticks'], state)
+                                self._to_search.append(self._door['room_name'])
+                                self._phase = Phase.FIND_NEXT_GOAL
 
                     if 'class_inheritance' in info and 'ObstacleObject' in info['class_inheritance'] and 'tree' in info[
                         'obj_id']:
@@ -528,7 +579,8 @@ class BaselineAgent(ArtificialBrain):
                                 self._answered = True
                                 self._waiting = False
                                 if not self.get_trust('Remove'):
-                                    self._send_message('Human Untrustworthy - Removing tree blocking  ' + str(self._door['room_name']) + '.',
+                                    self._send_message('Human Untrustworthy - Removing tree blocking  ' + str(
+                                        self._door['room_name']) + '.',
                                                        'RescueBot')
                                 if self.get_trust('Remove'):
                                     self._send_message('Removing tree blocking  ' + str(self._door['room_name']) + '.',
@@ -536,7 +588,9 @@ class BaselineAgent(ArtificialBrain):
                             if self._remove:
                                 if not self.get_trust('Remove'):
                                     self._send_message('' + str(
-                                        self._door['room_name']) + 'Human Untrustworthy - Removing tree blocking ' + str(self._door['room_name']) + '.',
+                                        self._door[
+                                            'room_name']) + 'Human Untrustworthy - Removing tree blocking ' + str(
+                                        self._door['room_name']) + '.',
                                                        'RescueBot')
                                 if self.get_trust('Remove'):
                                     self._send_message('Removing tree blocking  ' + str(self._door['room_name']) + '.',
@@ -548,9 +602,10 @@ class BaselineAgent(ArtificialBrain):
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 50  # wait for 10 ticks
+
                                 current_tick = state['World']['nr_ticks']
-                                if current_tick - self._wait_start < wait_threshold:
+
+                                if current_tick - self._wait_start < self._wait_threshold:
                                     return Idle.__name__, {'duration_in_ticks': 1}
                                 else:
                                     # wait threshold exceeded, just remove tree alone
@@ -558,8 +613,10 @@ class BaselineAgent(ArtificialBrain):
                                         self._answered = True
                                         self._waiting = False
                                         self._wait_start = None  # clear attribute holding the start tick of waiting
-                                        self._send_message('Human, i trusted you but you kept me waiting, i will remove tree on my own ' + str(self._door['room_name']) + '.',
-                                                           'RescueBot')
+                                        self._send_message(
+                                            'Human, i trusted you but you kept me waiting, i will remove tree on my own ' + str(
+                                                self._door['room_name']) + '.',
+                                            'RescueBot')
                                         self._trustBelief(self._team_members, trustBeliefs, self._folder,
                                                           ["Remove Not Responded"], state['World']['nr_ticks'], state)
                                     if self._remove:
@@ -612,41 +669,89 @@ class BaselineAgent(ArtificialBrain):
                             return RemoveObject.__name__, {'object_id': info['obj_id']}
                         # Remove the obstacle together if the human decides so
                         ## Only if human is trustworthy
-                        if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Remove together' and self.get_trust("Remove") or self._remove:
+                        if (self.received_messages_content and self.received_messages_content[-1] == 'Remove together'
+                            and self.get_trust("Remove") or self._remove) or self._afterResponse:
                             if not self._remove:
                                 self._answered = True
+                                self._waiting = False
+
                             # Tell the human to come over and be idle untill human arrives
                             if not state[{'is_human_agent': True}]:
                                 self._send_message(
-                                    'Please come to ' + str(self._door['room_name']) + ' to remove stones together.',
+                                    'Please come to ' + str(
+                                        self._door['room_name']) + ' to remove stones together.',
                                     'RescueBot')
-                                return None, {}
-                            # Tell the human to remove the obstacle when he/she arrives
+
+                                # What if the human says they will come but they don't show up??
+                                if not self._waiting:
+                                    self._waiting = True
+                                    if not self._afterResponse:
+                                        self._wait_start = state['World']['nr_ticks']
+
+                                # Continuously check if the waiting time has exceeded the threshold**
+                                if self._waiting:
+                                    current_tick = state['World']['nr_ticks']
+
+                                    if current_tick - self._wait_start < self._wait_threshold:
+                                        return Idle.__name__, {'duration_in_ticks': 1}
+
+                                    else:  # If waited too long, remove the stones alone
+                                        self._send_message(
+                                            'Human, I trusted you but you kept me waiting. Removing stones blocking ' + str(
+                                                self._door['room_name']) + '.', 'RescueBot'
+                                        )
+                                        self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                          ["Remove Not Responded"], state['World']['nr_ticks'],
+                                                          state)
+                                        self._waiting = False  # top waiting
+                                        self._answered = True
+                                        self._phase = Phase.ENTER_ROOM
+                                        self._wait_start = None  # Reset timer
+                                        self._remove = False
+                                        self._afterResponse = False
+                                        return RemoveObject.__name__, {'object_id': info['obj_id']}
+
                             if state[{'is_human_agent': True}]:
                                 self._send_message('Lets remove stones blocking ' + str(self._door['room_name']) + '!',
                                                    'RescueBot')
+                                self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                  ["Remove Responded"], state['World']['nr_ticks'],
+                                                  state, removed=self._removed_together)
+                                self._waiting = False
+                                self._wait_start = None
+                                self._afterResponse = False
+                                self._removed_together = True
                                 return None, {}
-                        # Remain idle until the human communicates what to do with the identified obstacle
+
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 50  # wait for 10 ticks
+
                                 current_tick = state['World']['nr_ticks']
-                                if current_tick - self._wait_start < wait_threshold:
-                                    return Idle.__name__, {'duration_in_ticks': 1}
-                                else:
-                                    # wait threshold exceeded, just remove tree alone
+
+                                # Responded
+                                if self._answered:
                                     self._waiting = False
-                                    self._send_message(
-                                        'Human, i trusted you but you kept me waiting. Removing stones blocking ' + str(self._door['room_name']) + '.',
-                                        'RescueBot')
-                                    self._trustBelief(self._team_members, trustBeliefs, self._folder,
-                                                      ["Remove Not Responded"], state['World']['nr_ticks'], state)
-                                    self._phase = Phase.ENTER_ROOM
-                                    self._wait_start = None  # clear attribute holding the start tick of waiting
-                                    self._remove = False
-                                    return RemoveObject.__name__, {'object_id': info['obj_id']}
+                                    # self._wait_start = None  # Reset waiting timer
+                                    self._afterResponse = True
+                                    return None, {}
+
+                                if current_tick - self._wait_start < self._wait_threshold:
+                                    return Idle.__name__, {'duration_in_ticks': 1}
+
+                                # Human didn't respond in time, removing alone.
+                                self._send_message(
+                                    'Human, I trusted you but you kept me waiting. Removing stones blocking ' + str(
+                                        self._door['room_name']) + '.', 'RescueBot'
+                                )
+                                self._trustBelief(self._team_members, trustBeliefs, self._folder,
+                                                  ["Remove Not Responded"], state['World']['nr_ticks'], state)
+                                self._phase = Phase.ENTER_ROOM
+                                self._waiting = False
+                                self._answered = True
+                                self._wait_start = None  # Reset wait timer
+                                self._remove = False
+                                return RemoveObject.__name__, {'object_id': info['obj_id']}
 
                 # If no obstacles are blocking the entrance, enter the area
                 if len(objects) == 0:
@@ -657,6 +762,8 @@ class BaselineAgent(ArtificialBrain):
 
             if Phase.ENTER_ROOM == self._phase:
                 self._answered = False
+                self._afterResponse = False
+                self._removed_together = False
 
                 trust = self.get_trust('Search')
 
@@ -865,9 +972,9 @@ class BaselineAgent(ArtificialBrain):
                 ## If human untrustworthy, skip critical victim, save mild victim alone
                 if self.received_messages_content and self._waiting and self.received_messages_content[
                     -1] != 'Rescue' and self.received_messages_content[-1] != 'Continue':
-                    wait_threshold = 50  # wait for 50 ticks
+
                     current_tick = state['World']['nr_ticks']
-                    if current_tick - self._wait_start < wait_threshold:
+                    if current_tick - self._wait_start < self._wait_threshold:
                         return Idle.__name__, {'duration_in_ticks': 1}
                     else:
                         # wait threshold exceeded, act alone
@@ -1036,7 +1143,7 @@ class BaselineAgent(ArtificialBrain):
                 # If a received message involves team members searching areas, add these areas to the memory of areas that have been explored
                 if msg.startswith("Search:"):
                     area = 'area ' + msg.split()[-1]
-                    if area not in self._searched_rooms:
+                    if self.get_trust('Search') and area not in self._searched_rooms:
                         self._searched_rooms.append(area)
                 # If a received message involves team members finding victims, add these victims and their locations to memory
                 if msg.startswith("Found:"):
@@ -1178,7 +1285,7 @@ class BaselineAgent(ArtificialBrain):
 
         return trustBeliefs
 
-    def _trustBelief(self, members, trustBeliefs, folder, receivedMessages, tick, state, is_comp=None):
+    def _trustBelief(self, members, trustBeliefs, folder, receivedMessages, tick, state, is_comp=None, removed=None):
         """
         Updates trust beliefs based on received messages and observed actions.
         """
@@ -1194,6 +1301,8 @@ class BaselineAgent(ArtificialBrain):
             "Remove": "Remove",
             "Rescue together": "Rescue Critical",  # Rescue together is related to rescuing
             "Remove Not Responded": "Remove",
+            "Remove Responded": "Remove",
+            "Rescue alone": "Rescue Mildly"
         }
 
         for message in receivedMessages:
@@ -1231,7 +1340,7 @@ class BaselineAgent(ArtificialBrain):
             print(f"Logged {task} event with target {target_area} at time {tick}.")
 
             if trust_type == "Search":
-                print(f"Increased willingness by Z due to Search event.")
+                print(f"Increased willingness by {Z} due to Search event.")
                 beliefs['willingness'] += Z
                 if is_comp is True:
                     print(f"Increased competence by {X} due to Search event.")
@@ -1280,6 +1389,10 @@ class BaselineAgent(ArtificialBrain):
                 beliefs['willingness'] -= Z
                 print(f"Decreased willingness by {Y} for {trust_type} event.")
 
+            elif trust_type in ["Remove together", "Rescue together"]:
+                beliefs['willingness'] += Z
+                print(f"Increased willingness by {Y} for {trust_type} event.")
+
             elif trust_type == 'Remove' and target_area is not None:
                 if target_area == self._trust_history["Search"][-1].target:
                     self._trustBelief(self._team_members, trustBeliefs, self._folder, [f"Search: {target_area}"],
@@ -1291,8 +1404,14 @@ class BaselineAgent(ArtificialBrain):
                 print(f"Increased willingness by {Z} for {trust_type} event.")
 
             elif trust_type == "Remove Not Responded":
-                beliefs['willingness'] -= Y
+                beliefs['willingness'] -= X
+                beliefs['competence'] -= Y
                 print(f"Decreased willingness by {Y} for Remove event.")
+
+            elif trust_type == "Remove Responded" and removed is False:
+                beliefs['willingness'] += X
+                beliefs['competence'] += Y
+                print(f"Increased willingness by {X} and Increased competence by {Y} for Remove event.")
 
             if trust_type == "Rescue together":
                 print(self.last_found_crit)

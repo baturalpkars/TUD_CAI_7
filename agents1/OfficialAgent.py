@@ -115,20 +115,22 @@ class BaselineAgent(ArtificialBrain):
 
         # different task types have different thresholds
         if task == 'Rescue Critical':
-            threshold = -0.8
+            threshold = 0.0
         elif task == 'Rescue Mildly':
-            threshold = -0.3
+            threshold = 0.0
         elif task == 'Remove':
-            threshold = -0.3
+            threshold = 0.0
         elif task == 'Search':
-            threshold = -0.3
+            threshold = 0.0
 
         C = trust_values[name][task]['competence'] * confidence
         W = trust_values[name][task]['willingness'] * (1 - confidence)
 
         trust = C + W
 
-        return trust >= threshold
+        # return trust >= threshold
+        rando = random.uniform(-1, 1)
+        return rando >= threshold
 
     def decide_on_actions(self, state):
         # Identify team members

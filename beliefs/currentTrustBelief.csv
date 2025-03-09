@@ -1,2 +1,5 @@
 name;task;competence;willingness
-;;;;
+ben;Search;-1.0;-0.3999999999999996
+ben;Rescue Critical;0.6;0.30000000000000004
+ben;Rescue Mildly;0.9;0.1
+ben;Remove;1.0;1.0

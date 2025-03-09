@@ -8,6 +8,53 @@ from worlds1.WorldBuilder import create_builder
 from pathlib import Path
 from loggers.OutputLogger import output_logger
 
+
+def load_current_trust_beliefs(folder, human_name):
+    """ Load current trust beliefs from `currentTrustBelief.csv` """
+    trustBeliefs = {}
+    current_file = os.path.join(folder, 'beliefs', 'currentTrustBelief.csv')
+
+    try:
+        with open(current_file, mode='r', newline='') as csvfile:
+            reader = csv.reader(csvfile, delimiter=';', quotechar='"')
+            next(reader)  # Skip header
+            for row in reader:
+                if row and row[0] == human_name:
+                    name, task, competence, willingness = row
+                    competence, willingness = float(competence), float(willingness)
+
+                    if name not in trustBeliefs:
+                        trustBeliefs[name] = {}
+
+                    trustBeliefs[name][task] = {'competence': competence, 'willingness': willingness}
+
+    except FileNotFoundError:
+        print("[INFO] `currentTrustBelief.csv` not found. Skipping update.")
+
+    return trustBeliefs
+
+def update_all_trust_beliefs(folder, trustBeliefs):
+    """ Append trust beliefs to `allTrustBeliefs.csv` after each mission """
+    all_file = os.path.join(folder, 'beliefs', 'allTrustBeliefs.csv')
+
+    try:
+        with open(all_file, mode='a', newline='') as csvfile:  # Append mode to keep historical data
+            writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+
+            # If file is empty, write the header first
+            if os.stat(all_file).st_size == 0:
+                writer.writerow(['name', 'task', 'competence', 'willingness'])
+
+            # Append trust beliefs
+            for name, tasks in trustBeliefs.items():
+                for task, values in tasks.items():
+                    writer.writerow([name, task, values['competence'], values['willingness']])
+
+        print("[INFO] Trust beliefs successfully appended to `allTrustBeliefs.csv`.")
+
+    except Exception as e:
+        print(f"[ERROR] Failed to update `allTrustBeliefs.csv`: {e}")
+
 if __name__ == "__main__":
     fld = os.getcwd()
     print("\nEnter one of the task types 'tutorial' or 'official':")
@@ -34,23 +81,11 @@ if __name__ == "__main__":
     builder.api_info['matrx_paused'] = False
     world.run(builder.api_info)
     print("DONE!")
-    # current_file = folder + '/beliefs/currentTrustBelief.csv'
-    # all_file = folder + '/beliefs/allTrustBeliefs.csv'
-    #
-    # # Write the current trust beliefs (overwrite)
-    # with open(current_file, mode='w', newline='') as csvfile:
-    #     writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-    #     writer.writerow(['name', 'task', 'competence', 'willingness'])
-    #     for name, tasks in trustBeliefs.items():
-    #         for task, values in tasks.items():
-    #             writer.writerow([name, task, values['competence'], values['willingness']])
-    #
-    # # Append the trust beliefs to `allTrustBeliefs.csv` (long-term memory)
-    # with open(all_file, mode='a', newline='') as csvfile:
-    #     writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-    #     for name, tasks in trustBeliefs.items():
-    #         for task, values in tasks.items():
-    #             writer.writerow([name, task, values['competence'], values['willingness']])
+
+    # Load current trust beliefs from `currentTrustBelief.csv` and update `allTrustBeliefs.csv`
+    trustBeliefs = load_current_trust_beliefs(fld, choice2)
+    update_all_trust_beliefs(fld, trustBeliefs)
+
     print("Shutting down custom visualizer")
     r = requests.get("http://localhost:" + str(visualization_server.port) + "/shutdown_visualizer")
     vis_thread.join()

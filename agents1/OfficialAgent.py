@@ -800,6 +800,8 @@ class BaselineAgent(ArtificialBrain):
                     if not state[{'is_human_agent': True}]:
                         self._send_message('Please come to ' + str(self._door['room_name']) + ' to carry ' + str(
                             self._recent_vic) + ' together.', 'RescueBot')
+                        self._wait_start = state['World']['nr_ticks']
+
                     # Tell the human to carry the critically injured victim together
                     if state[{'is_human_agent': True}]:
                         self._send_message('Lets carry ' + str(
@@ -819,6 +821,8 @@ class BaselineAgent(ArtificialBrain):
                     if not state[{'is_human_agent': True}]:
                         self._send_message('Please come to ' + str(self._door['room_name']) + ' to carry ' + str(
                             self._recent_vic) + ' together.', 'RescueBot')
+                        self._wait_start = state['World']['nr_ticks']
+
                     # Tell the human to carry the mildly injured victim together
                     if state[{'is_human_agent': True}]:
                         self._send_message('Lets carry ' + str(
@@ -868,6 +872,7 @@ class BaselineAgent(ArtificialBrain):
                     wait_threshold = 50  # wait for 50 ticks
                     current_tick = state['World']['nr_ticks']
                     if current_tick - self._wait_start < wait_threshold:
+                        print('A')
                         return Idle.__name__, {'duration_in_ticks': 1}
                     else:
                         # wait threshold exceeded, act alone
@@ -971,25 +976,6 @@ class BaselineAgent(ArtificialBrain):
                     self._carrying = True
                     return CarryObject.__name__, {'object_id': self._found_victim_logs[self._goal_vic]['obj_id'],
                                                   'human_name': self._human_name}
-
-            if Phase.PLAN_PATH_TO_DROPPOINT == self._phase:
-                self._navigator.reset_full()
-                # Plan the path to the drop zone
-                self._navigator.add_waypoints([self._goal_loc])
-                # Follow the path to the drop zone
-                self._phase = Phase.FOLLOW_PATH_TO_DROPPOINT
-
-            if Phase.FOLLOW_PATH_TO_DROPPOINT == self._phase:
-                # Communicate that the agent is transporting a mildly injured victim alone to the drop zone
-                if 'mild' in self._goal_vic and self._rescue == 'alone':
-                    self._send_message('Transporting ' + self._goal_vic + ' to the drop zone.', 'RescueBot')
-                self._state_tracker.update(state)
-                # Follow the path to the drop zone
-                action = self._navigator.get_move_action(self._state_tracker)
-                if action is not None:
-                    return action, {}
-                # Drop the victim at the drop zone
-                self._phase = Phase.DROP_VICTIM
 
             if Phase.DROP_VICTIM == self._phase:
                 # Communicate that the agent delivered a mildly injured victim alone to the drop zone
@@ -1194,6 +1180,7 @@ class BaselineAgent(ArtificialBrain):
             "Remove": "Remove",
             "Rescue together": "Rescue Critical",  # Rescue together is related to rescuing
             "Remove Not Responded": "Remove",
+            "Rescue alone": "Rescue Mildly"
         }
 
         for message in receivedMessages:

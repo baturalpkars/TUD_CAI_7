@@ -73,6 +73,7 @@ class BaselineAgent(ArtificialBrain):
         self._carrying = False
         self._waiting = False
         self._wait_start = None
+        self._wait_threshold = 60
         self._rescue = None
         self._recent_vic = None
         self._received_messages = []
@@ -83,7 +84,6 @@ class BaselineAgent(ArtificialBrain):
         self._last_message = 0
         self._afterResponse = False
         self._removed_together = False
-
         self._trust_history: dict[str, list[TrustEvent]] = {}
         self._trust_types: list[str] = ["Search", "Rescue Critical", "Rescue Mildly", "Remove"]
         self.last_found_crit = None
@@ -111,13 +111,13 @@ class BaselineAgent(ArtificialBrain):
         trust_values = self._loadBelief(self._team_members, self._folder)
 
         name = self._human_name
-        threshold = 0
+        threshold = -1
 
         # different task types have different thresholds
         if task == 'Rescue Critical':
-            threshold = -0.7
+            threshold = -0.8
         elif task == 'Rescue Mildly':
-            threshold = -0.2
+            threshold = -0.3
         elif task == 'Remove':
             threshold = -0.3
         elif task == 'Search':
@@ -488,10 +488,9 @@ class BaselineAgent(ArtificialBrain):
 
                                 # Continuously check if the waiting time has exceeded the threshold**
                                 if self._waiting:
-                                    wait_threshold = 100
                                     current_tick = state['World']['nr_ticks']
 
-                                    if current_tick - self._wait_start < wait_threshold:
+                                    if current_tick - self._wait_start < self._wait_threshold:
                                         return Idle.__name__, {'duration_in_ticks': 1}
 
                                     else:  # If waited too long, remove the stones alone
@@ -525,7 +524,7 @@ class BaselineAgent(ArtificialBrain):
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 60  # wait for 10 ticks
+
                                 current_tick = state['World']['nr_ticks']
 
                                 # Responded
@@ -535,7 +534,7 @@ class BaselineAgent(ArtificialBrain):
                                     self._afterResponse = True
                                     return None, {}
 
-                                if current_tick - self._wait_start < wait_threshold:
+                                if current_tick - self._wait_start < self._wait_threshold:
                                     return Idle.__name__, {'duration_in_ticks': 1}
 
                                 # Human didn't respond in time, removing alone.
@@ -603,9 +602,10 @@ class BaselineAgent(ArtificialBrain):
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 60  # wait for 10 ticks
+
                                 current_tick = state['World']['nr_ticks']
-                                if current_tick - self._wait_start < wait_threshold:
+
+                                if current_tick - self._wait_start < self._wait_threshold:
                                     return Idle.__name__, {'duration_in_ticks': 1}
                                 else:
                                     # wait threshold exceeded, just remove tree alone
@@ -690,10 +690,9 @@ class BaselineAgent(ArtificialBrain):
 
                                 # Continuously check if the waiting time has exceeded the threshold**
                                 if self._waiting:
-                                    wait_threshold = 100
                                     current_tick = state['World']['nr_ticks']
 
-                                    if current_tick - self._wait_start < wait_threshold:
+                                    if current_tick - self._wait_start < self._wait_threshold:
                                         return Idle.__name__, {'duration_in_ticks': 1}
 
                                     else:  # If waited too long, remove the stones alone
@@ -727,7 +726,7 @@ class BaselineAgent(ArtificialBrain):
                         else:
                             if self.get_trust('Remove'):
                                 # agent waiting but human trustworthy, keep waiting for set time
-                                wait_threshold = 60  # wait for 10 ticks
+
                                 current_tick = state['World']['nr_ticks']
 
                                 # Responded
@@ -737,7 +736,7 @@ class BaselineAgent(ArtificialBrain):
                                     self._afterResponse = True
                                     return None, {}
 
-                                if current_tick - self._wait_start < wait_threshold:
+                                if current_tick - self._wait_start < self._wait_threshold:
                                     return Idle.__name__, {'duration_in_ticks': 1}
 
                                 # Human didn't respond in time, removing alone.
@@ -868,6 +867,7 @@ class BaselineAgent(ArtificialBrain):
                                         clock - extra time when rescuing alone: 15 seconds \n afstand - distance between us: ' + self._distance_human,
                                                        'RescueBot')
                                     self._waiting = True
+                                    self._wait_start = state['World']['nr_ticks']
 
                                 if 'critical' in vic and self._answered == False and not self._waiting:
                                     self._send_message('Found ' + vic + ' in ' + self._door['room_name'] + '. Please decide whether to "Rescue" or "Continue" searching. \n\n \
@@ -877,6 +877,7 @@ class BaselineAgent(ArtificialBrain):
                                         self._collected_victims) + '\n \
                                         afstand - distance between us: ' + self._distance_human, 'RescueBot')
                                     self._waiting = True
+                                    self._wait_start = state['World']['nr_ticks']
                                     # Execute move actions to explore the area
                     return action, {}
 
@@ -915,8 +916,9 @@ class BaselineAgent(ArtificialBrain):
                     self._recent_vic = None
                     self._phase = Phase.PLAN_PATH_TO_VICTIM
                 # Make a plan to rescue a found mildly injured victim together if the human decides so
+                ## "Listen" to human only if trustworthy
                 if self.received_messages_content and self.received_messages_content[
-                    -1] == 'Rescue together' and 'mild' in self._recent_vic:
+                    -1] == 'Rescue together' and self.get_trust('Rescue Mildly') and 'mild' in self._recent_vic:
                     self._rescue = 'together'
                     self._answered = True
                     self._waiting = False
@@ -933,10 +935,17 @@ class BaselineAgent(ArtificialBrain):
                     self._recent_vic = None
                     self._phase = Phase.PLAN_PATH_TO_VICTIM
                 # Make a plan to rescue the mildly injured victim alone if the human decides so, and communicate this to the human
-                if self.received_messages_content and self.received_messages_content[
-                    -1] == 'Rescue alone' and 'mild' in self._recent_vic:
-                    self._send_message('Picking up ' + self._recent_vic + ' in ' + self._door['room_name'] + '.',
-                                       'RescueBot')
+                ## Or if human untrustworthy
+                if ((self.received_messages_content and self.received_messages_content[
+                    -1] == 'Rescue alone') or not self.get_trust('Rescue Mildly')) and self._recent_vic is not None and 'mild' in self._recent_vic:
+                    if self.get_trust('Rescue Mildly'):
+                        self._send_message('Picking up ' + self._recent_vic + ' in ' + self._door[
+                            'room_name'] + ' alone because you said so.',
+                                           'RescueBot')
+                    if not self.get_trust('Rescue Mildly'):
+                        self._send_message('Human Untrustworthy - Picking up ' + self._recent_vic + ' in ' + self._door[
+                            'room_name'] + ' alone.',
+                                           'RescueBot')
                     self._rescue = 'alone'
                     self._answered = True
                     self._waiting = False
@@ -945,16 +954,54 @@ class BaselineAgent(ArtificialBrain):
                     self._recent_vic = None
                     self._phase = Phase.PLAN_PATH_TO_VICTIM
                 # Continue searching other areas if the human decides so
-                if self.received_messages_content and self.received_messages_content[-1] == 'Continue':
+                ## Or if victim critical and human untrustworthy
+                if (self.received_messages_content and self.received_messages_content[-1] == 'Continue') or (self._recent_vic is not None and 'critical' in self._recent_vic and not self.get_trust('Rescue Critical')):
                     self._answered = True
                     self._waiting = False
                     self._todo.append(self._recent_vic)
+                    if not self.get_trust('Rescue Critical'):
+                        self._send_message(
+                            'Human Untrustworthy - I cannot rescue critical victim ' + self._recent_vic + ' in ' +
+                            self._door['room_name'] + ' alone. Moving on. ', 'RescueBot')
                     self._recent_vic = None
+
+
                     self._phase = Phase.FIND_NEXT_GOAL
                 # Remain idle until the human communicates to the agent what to do with the found victim
+                ## If human trustworthy, wait for response, and if wait time exceeds threshold act alone depending on victim type
+                ## If human untrustworthy, skip critical victim, save mild victim alone
                 if self.received_messages_content and self._waiting and self.received_messages_content[
                     -1] != 'Rescue' and self.received_messages_content[-1] != 'Continue':
-                    return None, {}
+
+                    current_tick = state['World']['nr_ticks']
+                    if current_tick - self._wait_start < self._wait_threshold:
+                        return Idle.__name__, {'duration_in_ticks': 1}
+                    else:
+                        # wait threshold exceeded, act alone
+                        if self._recent_vic is not None and 'critical' in self._recent_vic:
+                            if self.get_trust('Rescue Critical'):
+                                self._send_message('Human, I trusted you but you kept me waiting. I cannot rescue a critical victim ' + self._recent_vic + ' in ' + self._door['room_name'] + ' alone. Moving on. ', 'RescueBot')
+                            if not self.get_trust('Rescue Critical'):
+                                self._send_message('Human Untrustworthy - I cannot rescue critical victim ' + self._recent_vic + ' in ' + self._door['room_name'] + ' alone. Moving on. ', 'RescueBot')
+                            self._answered = True
+                            self._waiting = False
+                            self._todo.append(self._recent_vic)
+                            self._recent_vic = None
+                            self._phase = Phase.FIND_NEXT_GOAL
+
+                        if self._recent_vic is not None and 'mild' in self._recent_vic:
+                            if self.get_trust('Rescue Mildly'):
+                                self._send_message('Human, I trusted you but you kept me waiting. I will rescue victim ' + self._recent_vic + ' in ' + self._door['room_name'] + ' on my own. ', 'RescueBot')
+                            if not self.get_trust('Rescue Mildly'):
+                                self._send_message('Human Untrustworthy - I will rescue victim ' + self._recent_vic + ' in ' + self._door['room_name'] + ' on my own. ', 'RescueBot')
+                            self._rescue = 'alone'
+                            self._answered = True
+                            self._waiting = False
+                            self._goal_vic = self._recent_vic
+                            self._goal_loc = self._remaining[self._goal_vic]
+                            self._recent_vic = None
+                            self._phase = Phase.PLAN_PATH_TO_VICTIM
+
                 # Find the next area to search when the agent is not waiting for an answer from the human or occupied with rescuing a victim
                 if not self._waiting and not self._rescue:
                     self._recent_vic = None
@@ -1010,7 +1057,6 @@ class BaselineAgent(ArtificialBrain):
                         'class_inheritance'] and 'mild' in info['obj_id'] and info['location'] in self._roomtiles:
                         objects.append(info)
                         # Remain idle when the human has not arrived at the location
-                        ## Remain idle for a set time, then
                         if not self._human_name in info['name']:
                             self._waiting = True
                             self._moving = False

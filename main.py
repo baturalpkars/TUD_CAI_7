@@ -34,6 +34,23 @@ if __name__ == "__main__":
     builder.api_info['matrx_paused'] = False
     world.run(builder.api_info)
     print("DONE!")
+    # current_file = folder + '/beliefs/currentTrustBelief.csv'
+    # all_file = folder + '/beliefs/allTrustBeliefs.csv'
+    #
+    # # Write the current trust beliefs (overwrite)
+    # with open(current_file, mode='w', newline='') as csvfile:
+    #     writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    #     writer.writerow(['name', 'task', 'competence', 'willingness'])
+    #     for name, tasks in trustBeliefs.items():
+    #         for task, values in tasks.items():
+    #             writer.writerow([name, task, values['competence'], values['willingness']])
+    #
+    # # Append the trust beliefs to `allTrustBeliefs.csv` (long-term memory)
+    # with open(all_file, mode='a', newline='') as csvfile:
+    #     writer = csv.writer(csvfile, delimiter=';', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    #     for name, tasks in trustBeliefs.items():
+    #         for task, values in tasks.items():
+    #             writer.writerow([name, task, values['competence'], values['willingness']])
     print("Shutting down custom visualizer")
     r = requests.get("http://localhost:" + str(visualization_server.port) + "/shutdown_visualizer")
     vis_thread.join()

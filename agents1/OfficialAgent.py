@@ -1367,7 +1367,8 @@ class BaselineAgent(ArtificialBrain):
                     self.last_found_mildness = target_area
                     print(f"Updated last_found_mildness to {self.last_found_mildness}")
                 # Check if any Search event in our history had a matching target:
-                if any(event.target == target_area for event in self._trust_history["Search"]):
+                print(self._trust_history["Search"][-2].target)
+                if self._trust_history["Search"][-2].target == target_area:
                     beliefs['competence'] += Z
                     beliefs['willingness'] += Y
                     print(f"Increased competence by {Z} (Found event match).")

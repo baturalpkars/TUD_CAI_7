@@ -1,5 +1,5 @@
 name;task;competence;willingness
-donald;Search;0.5;0.5
-donald;Rescue Critical;0.5;0.5
-donald;Rescue Mildly;0.5;0.5
-donald;Remove;0.5;0.5
+alice;Search;0.0;1.0
+alice;Rescue Critical;-1.0;0.0
+alice;Rescue Mildly;0.0;0.0
+alice;Remove;0.0;-1.0

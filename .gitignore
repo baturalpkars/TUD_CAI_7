@@ -4,3 +4,9 @@
 
 # Ignore logs directory
 logs/
+
+# Ignore CSV belief files (if needed)
+beliefs/*.csv
+
+# Ignore venv
+venv/

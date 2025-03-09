@@ -1147,6 +1147,7 @@ class BaselineAgent(ArtificialBrain):
             "Remove": "Remove",
             "Rescue together": "Rescue Critical",  # Rescue together is related to rescuing
             "Remove Not Responded": "Remove",
+            "Rescue alone": "Rescue Mildly"
         }
 
         for message in receivedMessages:

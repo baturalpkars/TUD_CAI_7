@@ -115,13 +115,13 @@ class BaselineAgent(ArtificialBrain):
 
         # different task types have different thresholds
         if task == 'Rescue Critical':
-            threshold = -0.5
+            threshold = -0.7
         elif task == 'Rescue Mildly':
-            threshold = 0
+            threshold = -0.2
         elif task == 'Remove':
-            threshold = -0.1
+            threshold = -0.3
         elif task == 'Search':
-            threshold = -0.1
+            threshold = -0.3
 
         C = trust_values[name][task]['competence'] * confidence
         W = trust_values[name][task]['willingness'] * (1 - confidence)
@@ -1253,7 +1253,8 @@ class BaselineAgent(ArtificialBrain):
             "Remove together": "Remove",
             "Remove alone": "Remove",
             "Remove": "Remove",
-            "Rescue together": "Rescue Critical",  # Rescue together is related to rescuing
+            "Rescue together": "Rescue Mildly",
+            "Rescue": "Rescue Critical",# Rescue together is related to rescuing
             "Remove Not Responded": "Remove",
             "Remove Responded": "Remove",
             "Rescue alone": "Rescue Mildly"
@@ -1335,6 +1336,7 @@ class BaselineAgent(ArtificialBrain):
                     beliefs['willingness'] += Z
                     print(
                         f"Increased competence by {X} and willingness by {Z} for Collect event match (target {target_area}).")
+                    self.last_found_mildness = None
                 else:
                     beliefs['competence'] -= X
                     print(f"Decreased competence by {X} for Collect event no match (target {target_area}).")
@@ -1367,7 +1369,7 @@ class BaselineAgent(ArtificialBrain):
                 beliefs['competence'] += Y
                 print(f"Increased willingness by {X} and Increased competence by {Y} for Remove event.")
 
-            if trust_type == "Rescue together":
+            if trust_type == "Rescue":
                 print(self.last_found_crit)
                 # Check if the last message before this was a Found event with a critical victim.
                 if self.last_found_crit is not None:
@@ -1375,10 +1377,23 @@ class BaselineAgent(ArtificialBrain):
                     beliefs['willingness'] += Z
                     print(
                         f"Increased competence by {X} for Rescue together (last found critical: {self.last_found_crit}).")
+                    self.last_found_crit = None
                 else:
                     beliefs['competence'] -= X
                     print(f"Decreased competence by {X} for Rescue together (no matching Found event).")
 
+            if trust_type == "Rescue Together":
+                print(self.last_found_mildness)
+                # Check if the last message before this was a Found event with a critical victim.
+                if self.last_found_mildness is not None:
+                    beliefs['competence'] += X
+                    beliefs['willingness'] += Z
+                    print(
+                        f"Increased competence by {X} for Rescue together (last found mild: {self.last_found_crit}).")
+                    self.last_found_mildness = None
+                else:
+                    beliefs['competence'] -= X
+                    print(f"Decreased competence by {X} for Rescue together (no matching Found event).")
             # You can add similar blocks for "Remove together", "Rescue alone", etc.
             # For example, for "Remove together", you could update willingness similarly.
 

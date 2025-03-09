@@ -88,6 +88,7 @@ class BaselineAgent(ArtificialBrain):
         self._trust_types: list[str] = ["Search", "Rescue Critical", "Rescue Mildly", "Remove"]
         self.last_found_crit = None
         self.last_found_resc = None
+        self.last_found_mildness = None
 
     def initialize(self):
         # Initialization of the state tracker and navigation algorithm
@@ -118,9 +119,9 @@ class BaselineAgent(ArtificialBrain):
         elif task == 'Rescue Mildly':
             threshold = 0
         elif task == 'Remove':
-            threshold = 0
+            threshold = -0.1
         elif task == 'Search':
-            threshold = 0
+            threshold = -0.1
 
         C = trust_values[name][task]['competence'] * confidence
         W = trust_values[name][task]['willingness'] * (1 - confidence)

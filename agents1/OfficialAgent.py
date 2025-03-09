@@ -447,15 +447,18 @@ class BaselineAgent(ArtificialBrain):
                                 \n clock - removal time: 5 seconds \n afstand - distance between us: ' + self._distance_human,
                                                'RescueBot')
                             self._waiting = True
-                            self._wait_start = state['World']['nr_ticks']
+                            self._wait_start = self._tick
                             # Determine the next area to explore if the human tells the agent not to remove the obstacle and human trustworthy
                             ## Or if human untrustworthy
-                        if self.received_messages_content and self.received_messages_content[
-                            -1] == 'Continue' and not self._remove and self.get_trust('Remove') or not self.get_trust('Remove'):
+                        if (self.received_messages_content and self.received_messages_content[
+                            -1] == 'Continue' and not self._remove and self.get_trust('Remove')) or not self.get_trust('Remove'):
                             self._answered = True
                             self._waiting = False
                             # Add area to the to do list
                             self._to_search.append(self._door['room_name'])
+                            if not self.get_trust('Remove'):
+                                self._send_message('Human Untrustworthy - Skipping Rock ' + str(self._door['room_name']) + '.',
+                                                       'RescueBot')
                             self._phase = Phase.FIND_NEXT_GOAL
                         # Wait for the human to help removing the obstacle and remove the obstacle together
                         ## Only if human trustworthy?
@@ -488,7 +491,7 @@ class BaselineAgent(ArtificialBrain):
                                     self._answered = True
                                     self._waiting = False
                                     self._wait_start = None  # clear attribute holding the start tick of waiting
-                                    self._send_message('Human Untrustworthy, skipping Rock', 'RescueBot')
+                                    self._send_message('Human, i trusted you but you kept me waiting, i will skip Rock', 'RescueBot')
                                     self._to_search.append(self._door['room_name'])
                                     self._phase = Phase.FIND_NEXT_GOAL
 
@@ -504,6 +507,8 @@ class BaselineAgent(ArtificialBrain):
                                 self._searched_rooms).replace('area ', '') + ' \
                                 \n clock - removal time: 10 seconds', 'RescueBot')
                             self._waiting = True
+                            self._wait_start = self._tick
+
                         # Determine the next area to explore if the human tells the agent not to remove the obstacle
                         ## Only if human is trustworthy
                         if self.received_messages_content and self.received_messages_content[
@@ -520,11 +525,20 @@ class BaselineAgent(ArtificialBrain):
                             if not self._remove:
                                 self._answered = True
                                 self._waiting = False
-                                self._send_message('Removing tree blocking ' + str(self._door['room_name']) + '.',
-                                                   'RescueBot')
+                                if not self.get_trust('Remove'):
+                                    self._send_message('Human Untrustworthy - Removing tree blocking  ' + str(self._door['room_name']) + '.',
+                                                       'RescueBot')
+                                if self.get_trust('Remove'):
+                                    self._send_message('Removing tree blocking  ' + str(self._door['room_name']) + '.',
+                                                       'RescueBot')
                             if self._remove:
-                                self._send_message('Removing tree blocking ' + str(
-                                    self._door['room_name']) + ' because you asked me to.', 'RescueBot')
+                                if not self.get_trust('Remove'):
+                                    self._send_message('' + str(
+                                        self._door['room_name']) + 'Human Untrustworthy - Removing tree blocking ' + str(self._door['room_name']) + '.',
+                                                       'RescueBot')
+                                if self.get_trust('Remove'):
+                                    self._send_message('Removing tree blocking  ' + str(self._door['room_name']) + '.',
+                                                       'RescueBot')
                             self._phase = Phase.ENTER_ROOM
                             self._remove = False
                             return RemoveObject.__name__, {'object_id': info['obj_id']}
@@ -542,11 +556,11 @@ class BaselineAgent(ArtificialBrain):
                                         self._answered = True
                                         self._waiting = False
                                         self._wait_start = None  # clear attribute holding the start tick of waiting
-                                        self._send_message('Human Untrustworthy - Removing tree blocking ' + str(self._door['room_name']) + '.',
+                                        self._send_message('Human, i trusted you but you kept me waiting, i will remove tree on my own ' + str(self._door['room_name']) + '.',
                                                            'RescueBot')
                                     if self._remove:
-                                        self._send_message('Human Untrustworthy - Removing tree blocking ' + str(
-                                            self._door['room_name']) + ' because you asked me to.', 'RescueBot')
+                                        self._send_message(' ' + str(
+                                            self._door['room_name']) + ' because i waited too long.', 'RescueBot')
                                     self._phase = Phase.ENTER_ROOM
                                     self._remove = False
                                     self._wait_start = None  # clear attribute holding the start tick of waiting
@@ -564,6 +578,8 @@ class BaselineAgent(ArtificialBrain):
                                 \n clock - removal time together: 3 seconds \n afstand - distance between us: ' + self._distance_human + '\n clock - removal time alone: 20 seconds',
                                                'RescueBot')
                             self._waiting = True
+                            self._wait_start = self._tick
+
                         # Determine the next area to explore if the human tells the agent not to remove the obstacle
                         ## Follow what human says only if trustworthy
                         if self.received_messages_content and self.received_messages_content[
@@ -579,8 +595,13 @@ class BaselineAgent(ArtificialBrain):
                             -1] == 'Remove alone' and self.get_trust("Remove")) and not self._remove) or not self.get_trust("Remove"):
                             self._answered = True
                             self._waiting = False
-                            self._send_message('Removing stones blocking ' + str(self._door['room_name']) + '.',
-                                               'RescueBot')
+
+                            if not self.get_trust("Remove"):
+                                self._send_message('Human Untrustworthy - Removing stones blocking ' + str(self._door['room_name']) + '.',
+                                                   'RescueBot')
+                            if self.get_trust("Remove"):
+                                self._send_message('Removing stones blocking ' + str(self._door['room_name']) + '.',
+                                                   'RescueBot')
                             self._phase = Phase.ENTER_ROOM
                             self._remove = False
                             return RemoveObject.__name__, {'object_id': info['obj_id']}
@@ -613,7 +634,7 @@ class BaselineAgent(ArtificialBrain):
                                     # wait threshold exceeded, just remove tree alone
                                     self._waiting = False
                                     self._send_message(
-                                        'Human Untrustworthy - Removing stones blocking ' + str(self._door['room_name']) + '.',
+                                        'Human, i trusted you but you kept me waiting. Removing stones blocking ' + str(self._door['room_name']) + '.',
                                         'RescueBot')
                                     self._phase = Phase.ENTER_ROOM
                                     self._wait_start = None  # clear attribute holding the start tick of waiting
